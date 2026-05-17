@@ -1,0 +1,70 @@
+/**
+ * Defines the structure of the FirebaseBlueprint configuration.
+ */
+{
+  "entities": {
+    "Log": {
+      "title": "Log",
+      "description": "A single detection log from a Node.",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "number" },
+        "source": { "type": "string" },
+        "action": { "type": "string" },
+        "userId": { "type": "string" },
+        "isDemo": { "type": "boolean" }
+      },
+      "required": ["timestamp", "source", "action"]
+    },
+    "NodeState": {
+      "title": "NodeState",
+      "description": "State of a specific node.",
+      "type": "object",
+      "properties": {
+        "uv365": { "type": "number" },
+        "uv395": { "type": "number" },
+        "battery": { "type": "number" },
+        "voltage": { "type": "number" },
+        "led": { "type": "boolean" },
+        "online": { "type": "boolean" },
+        "isDemo": { "type": "boolean" }
+      },
+      "required": ["battery", "voltage", "led", "online"]
+    },
+    "ChartData": {
+      "title": "ChartData",
+      "description": "Chart time series point.",
+      "type": "object",
+      "properties": {
+        "time": { "type": "string" },
+        "NodeA": { "type": "number" },
+        "NodeB": { "type": "number" },
+        "isDemo": { "type": "boolean" }
+      },
+      "required": ["time", "NodeA", "NodeB"]
+    }
+  },
+  "firestore": {
+    "logs/{logId}": {
+      "schema": { "$ref": "Log" },
+      "description": "Logs for detections."
+    },
+    "nodes/{nodeId}": {
+      "schema": { "$ref": "NodeState" },
+      "description": "State for a given node."
+    },
+    "chart_data/{dataId}": {
+      "schema": { "$ref": "ChartData" },
+      "description": "Hourly count for chart visualization."
+    },
+    "demo_logs/{logId}": {
+      "schema": { "$ref": "Log" }
+    },
+    "demo_nodes/{nodeId}": {
+      "schema": { "$ref": "NodeState" }
+    },
+    "demo_chart_data/{dataId}": {
+      "schema": { "$ref": "ChartData" }
+    }
+  }
+}

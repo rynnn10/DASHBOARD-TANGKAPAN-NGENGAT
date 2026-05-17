@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { return request.auth != null; }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    function isValidLog(data) {
+      return data.keys().hasAll(['timestamp', 'source', 'action', 'userId']) &&
+             data.keys().size() == 4 &&
+             data.timestamp is number &&
+             data.source is string &&
+             data.source.size() <= 100 &&
+             data.action is string &&
+             data.action.size() <= 100 &&
+             data.userId is string &&
+             data.userId == request.auth.uid;
+    }
+    
+    function isValidDemoLog(data) {
+      return data.keys().hasAll(['timestamp', 'source', 'action']) &&
+             data.timestamp is number &&
+             data.source is string &&
+             data.source.size() <= 100 &&
+             data.action is string &&
+             data.action.size() <= 100;
+    }
+
+    match /logs/{logId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid; // Only user's own logs
+      allow create: if isSignedIn() && isValidId(logId) && isValidLog(incoming());
+      allow update, delete: if false; // Logs are immutable
+    }
+
+    match /nodes/{nodeId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    }
+    match /chart_data/{dataId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    }
+    
+    match /demo_logs/{logId} {
+      allow read: if true;
+      allow create: if isValidId(logId) && isValidDemoLog(incoming());
+      allow update, delete: if false;
+    }
+    match /demo_nodes/{nodeId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /demo_chart_data/{dataId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId &&
+          (!request.resource.data.keys().hasAny(['coverUrl']) || (request.resource.data.coverUrl is string && request.resource.data.coverUrl.size() <= 3000000)) &&
+          (!request.resource.data.keys().hasAny(['photoUrl']) || (request.resource.data.photoUrl is string && request.resource.data.photoUrl.size() <= 3000000));
+    }
+  }
+}
