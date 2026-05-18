@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Leaf, X, PieChart, List, Settings, Menu, Clock, Settings as SettingsIcon, Bug, Wifi, Battery, BatteryMedium, Lightbulb, RotateCcw, Microscope, SatelliteDish, CheckCircle2, Edit2, Camera, Save, Image as ImageIcon, Download } from 'lucide-react';
-import { auth, db, signInWithPopup, GoogleAuthProvider, signOut, collection, onSnapshot, query, orderBy, limit, handleFirestoreError, OperationType, addDoc, doc, setDoc, updateProfile, where } from './firebase';
-import { getDoc } from 'firebase/firestore';
+import { Leaf, X, PieChart, List, Settings, Menu, Clock, Settings as SettingsIcon, Bug, Wifi, Battery, BatteryMedium, Lightbulb, RotateCcw, Microscope, SatelliteDish, CheckCircle2, Edit2, Camera, Save, Image as ImageIcon, Download, Database, Loader2, Copy, LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { clsx, type ClassValue } from 'clsx';
+import { clsx } from 'clsx';
+import type { ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzJcenLeLaO_80BkHS_aVBtqiIUCZ3ETll0JeOoyfqy2zT-sClhoPmQTH310M0s2pHm/exec";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -217,68 +218,143 @@ export default function App() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isProfileOpen, setProfileOpen] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(true);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
-  const [time, setTime] = useState('');
-  const [user, setUser] = useState(auth.currentUser);
+  const [isSheetSettingsOpen, setSheetSettingsOpen] = useState(false);
+  const [sheetUrl, setSheetUrl] = useState(() => localStorage.getItem('googleSheetUrl') || '');
+  const [isSyncingSheet, setIsSyncingSheet] = useState(false);
   
-  // Profile Edit States
+  const [isDemoMode, setIsDemoMode] = useState(() => localStorage.getItem('isDemoMode') !== 'false');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => (localStorage.getItem('theme') as any) || 'system');
+  const [dateStr, setDateStr] = useState('');
+  const [timeStr, setTimeStr] = useState('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      
+      const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const dayName = days[now.getDay()];
+      
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      
+      setDateStr(`${dayName}, ${day}/${month}/${year}`);
+      setTimeStr(`${hours}:${minutes}:${seconds}`);
+    };
+    
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
+  
+  // Auth & Profile States
+  const [isLoginModalOpen, setLoginModalOpen] = useState(false);
+  const [loginSuccess, setLoginSuccess] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [loginName, setLoginName] = useState('');
+  const [loginPhoto, setLoginPhoto] = useState('');
+  const [loginCover, setLoginCover] = useState('');
+  const [loginMode, setLoginMode] = useState<'login' | 'register'>('login');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+
+  const [userProfile, setUserProfile] = useState<{ displayName: string, email: string, photoURL: string, coverUrl: string } | null>(() => {
+     const saved = localStorage.getItem('userProfile');
+     return saved ? JSON.parse(saved) : null;
+  });
+
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhotoUrl, setEditPhotoUrl] = useState('');
   const [editCoverUrl, setEditCoverUrl] = useState('');
-  const [userProfile, setUserProfile] = useState<{ coverUrl?: string }>({});
-
-  useEffect(() => {
-    if (user) {
-      const fetchProfile = async () => {
-        try {
-          const docRef = doc(db, 'users', user.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            setUserProfile(docSnap.data());
-          }
-        } catch (error) {
-          console.error("Error fetching user profile", error);
-        }
-      };
-      fetchProfile();
-    }
-  }, [user]);
 
   const handleSaveProfile = async () => {
-    if (!user) return;
-    try {
-      if (editName !== user.displayName || editPhotoUrl !== user.photoURL) {
-        await updateProfile(user, {
-          displayName: editName,
-          photoURL: editPhotoUrl,
+    if (!userProfile) return;
+    const updatedProfile = {
+        ...userProfile,
+        displayName: editName,
+        photoURL: editPhotoUrl,
+        coverUrl: editCoverUrl
+    };
+    setUserProfile(updatedProfile);
+    localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
+    setIsEditingProfile(false);
+
+    if (SCRIPT_URL) {
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'updateProfile',
+            email: userProfile.email,
+            displayName: editName,
+            photoURL: editPhotoUrl,
+            coverUrl: editCoverUrl
+          })
         });
-        // Force state update to re-render
-        setUser({ ...user });
+      } catch (e) {
+        console.error("Gagal update profile server", e);
       }
-      
-      const docRef = doc(db, 'users', user.uid);
-      await setDoc(docRef, { coverUrl: editCoverUrl }, { merge: true });
-      setUserProfile(prev => ({ ...prev, coverUrl: editCoverUrl }));
-      setIsEditingProfile(false);
-    } catch (e) {
-      console.error("Error updating profile", e);
     }
   };
 
   const handleOpenEditProfile = () => {
-    setEditName(user?.displayName || '');
-    setEditPhotoUrl(user?.photoURL || '');
-    setEditCoverUrl(userProfile?.coverUrl || '');
+    if (!userProfile) return;
+    setEditName(userProfile.displayName || '');
+    setEditPhotoUrl(userProfile.photoURL || '');
+    setEditCoverUrl(userProfile.coverUrl || '');
     setIsEditingProfile(true);
   };
 
-
   // Data States
-  const [nodeA, setNodeA] = useState({ uv365: 142, online: true, battery: 85, voltage: 13.6, led: true });
-  const [nodeB, setNodeB] = useState({ uv395: 98, online: true, battery: 62, voltage: 13.1, led: true });
+  const [nodeA, setNodeA] = useState(() => isDemoMode 
+    ? { uv365: 142, online: true, battery: 85, voltage: 13.6, led: true }
+    : { uv365: 0, online: false, battery: 0, voltage: 0, led: false }
+  );
+  const [nodeB, setNodeB] = useState(() => isDemoMode 
+    ? { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true }
+    : { uv395: 0, online: false, battery: 0, voltage: 0, led: false }
+  );
   const [logs, setLogs] = useState<any[]>([]);
+
+  // Logs Filter State
+  const [filterSource, setFilterSource] = useState('all');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+
+  const filteredLogs = React.useMemo(() => {
+      return logs.filter(log => {
+          // Source filter
+          if (filterSource !== 'all' && log.source !== filterSource) return false;
+          
+          // Date range filter
+          const logDate = new Date(log.timestamp);
+          // Set to beginning of the day for accurate comparison
+          logDate.setHours(0, 0, 0, 0);
+
+          if (filterStartDate) {
+              const startDate = new Date(filterStartDate);
+              startDate.setHours(0, 0, 0, 0);
+              if (logDate < startDate) return false;
+          }
+
+          if (filterEndDate) {
+              const endDate = new Date(filterEndDate);
+              endDate.setHours(0, 0, 0, 0);
+              if (logDate > endDate) return false;
+          }
+
+          return true;
+      });
+  }, [logs, filterSource, filterStartDate, filterEndDate]);
 
   // Chart Data
   const [chartData, setChartData] = useState<any[]>([]);
@@ -289,24 +365,42 @@ export default function App() {
   const [evaluation, setEvaluation] = useState<{ err365: number, err395: number } | null>(null);
   
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [notifications, setNotifications] = useState<{id: number, text: string}[]>([]);
-  const prevOnlineRef = React.useRef({ A: true, B: true });
+  const prevOnlineRef = React.useRef({ A: isDemoMode ? true : false, B: isDemoMode ? true : false });
 
-  const triggerEmailNotification = (nodeName: string) => {
-    const id = Date.now();
-    setNotifications(prev => [...prev, { id, text: `Sistem: Email peringatan telah dikirim (${nodeName} Offline)` }]);
-    setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 5000);
-  };
+  const dataRef = React.useRef({ logs, nodeA, nodeB, chartData });
+  useEffect(() => {
+    dataRef.current = { logs, nodeA, nodeB, chartData };
+  }, [logs, nodeA, nodeB, chartData]);
+
+  // Auto-sync ke Google Sheets setiap 5 menit
+  useEffect(() => {
+    if (!userProfile || !SCRIPT_URL) return;
+
+    const syncInterval = setInterval(async () => {
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'syncData',
+            logs: dataRef.current.logs,
+            nodeA: dataRef.current.nodeA,
+            nodeB: dataRef.current.nodeB,
+            chartData: dataRef.current.chartData,
+            email: userProfile.email,
+            isDemoMode: isDemoMode
+          })
+        });
+        console.log("Auto-sync success");
+      } catch (e) {
+        console.error("Auto-sync failed:", e);
+      }
+    }, 5 * 60 * 1000); // 5 menit
+
+    return () => clearInterval(syncInterval);
+  }, [userProfile, isDemoMode]);
 
   useEffect(() => {
-    if (prevOnlineRef.current.A === true && nodeA.online === false) {
-      triggerEmailNotification('Node A');
-    }
-    if (prevOnlineRef.current.B === true && nodeB.online === false) {
-      triggerEmailNotification('Node B');
-    }
     prevOnlineRef.current = { A: nodeA.online, B: nodeB.online };
   }, [nodeA.online, nodeB.online]);
 
@@ -322,23 +416,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => {
-      setUser(u);
-    });
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTime(new Date().toLocaleString('id-ID', {
-        weekday: 'long', year: 'numeric', month: 'long',
-        day: 'numeric', hour: '2-digit', minute: '2-digit'
-      }));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     const applyTheme = () => {
       if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
         document.documentElement.classList.add('dark');
@@ -351,142 +428,276 @@ export default function App() {
     return () => window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', applyTheme);
   }, [theme]);
 
+  // Chart Time Range State
+  const [timeRange, setTimeRange] = useState<'hari' | 'minggu' | 'bulan' | 'tahun'>('hari');
+  const [timeDuration, setTimeDuration] = useState<string>('hari_ini');
+
+  // Effect Chart Time Range State
+  const [effectTimeRange, setEffectTimeRange] = useState<'hari' | 'minggu' | 'bulan' | 'tahun'>('hari');
+  const [effectTimeDuration, setEffectTimeDuration] = useState<string>('hari_ini');
+  const [effectChartData, setEffectChartData] = useState<{NodeA: number, NodeB: number}>({NodeA: 0, NodeB: 0});
+
+
+  // Offline Simulation Initial Data
   useEffect(() => {
-    let unsubs: any[] = [];
-    
-    const initData = async () => {
-      try {
-        if (isDemoMode) {
-          const demoRef = doc(db, 'demo_nodes', 'NodeA');
-          const snap = await getDoc(demoRef);
-          if (!snap.exists()) {
-            await setDoc(doc(db, 'demo_nodes', 'NodeA'), { uv365: 142, online: true, battery: 85, voltage: 13.6, led: true });
-            await setDoc(doc(db, 'demo_nodes', 'NodeB'), { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true });
-            const labels = ['18:00', '19:00', '20:00', '21:00', '22:00', '23:00', '00:00', '01:00', '02:00', '03:00', '04:00', '05:00', '06:00'];
-            const dataA = [2, 15, 30, 45, 25, 10, 5, 3, 2, 1, 2, 1, 1];
-            const dataB = [1, 10, 20, 32, 18, 8, 4, 2, 1, 1, 0, 1, 0];
-            for (let i = 0; i < labels.length; i++) {
-              await setDoc(doc(db, 'demo_chart_data', String(i)), { time: labels[i], NodeA: dataA[i], NodeB: dataB[i], sort: i });
-            }
-            const sources = ['Node A (UV 365 nm)', 'Node B (UV 395 nm)'];
-            let now = Date.now();
-            for(let i=0; i<5; i++) {
-              await addDoc(collection(db, 'demo_logs'), {
-                timestamp: now - (Math.random() * 60000 * (i + 1)),
-                source: sources[Math.floor(Math.random() * sources.length)],
-                action: 'IR Terpicu (+1)'
-              });
-            }
-          }
-        } else if (user) {
-          const nodeARef = doc(db, 'nodes', `NodeA_${user.uid}`);
-          const snap = await getDoc(nodeARef);
-          if (!snap.exists()) {
-            await setDoc(nodeARef, { uv365: 0, online: true, battery: 100, voltage: 14.1, led: true, userId: user.uid });
-            await setDoc(doc(db, 'nodes', `NodeB_${user.uid}`), { uv395: 0, online: true, battery: 100, voltage: 14.1, led: true, userId: user.uid });
-            await setDoc(doc(db, 'chart_data', `0_${user.uid}`), { time: '00:00', NodeA: 0, NodeB: 0, sort: 0, userId: user.uid });
-          }
-        }
-      } catch (err) {
-        console.error("Init data error", err);
-      }
-    };
-
-    if (isDemoMode || user) {
-      initData().then(() => {
-        // Setup listeners
-        const prefix = isDemoMode ? 'demo_' : '';
-        const uid = user ? user.uid : '';
-
-        // 1. Nodes
-        const nodeADoc = doc(db, `${prefix}nodes`, isDemoMode ? 'NodeA' : `NodeA_${uid}`);
-        unsubs.push(onSnapshot(nodeADoc, (snap) => {
-          if (snap.exists()) setNodeA(snap.data() as any);
-        }));
-
-        const nodeBDoc = doc(db, `${prefix}nodes`, isDemoMode ? 'NodeB' : `NodeB_${uid}`);
-        unsubs.push(onSnapshot(nodeBDoc, (snap) => {
-          if (snap.exists()) setNodeB(snap.data() as any);
-        }));
-
-        // 2. Chart Data
-        const chartRef = collection(db, `${prefix}chart_data`);
-        const qChart = isDemoMode ? query(chartRef, orderBy('sort', 'asc')) : query(chartRef, where('userId', '==', uid));
-        unsubs.push(onSnapshot(qChart, (snap) => {
-           let c: any[] = [];
-           snap.forEach(d => c.push(d.data()));
-           if (!isDemoMode) c.sort((a,b) => a.sort - b.sort);
-           setChartData(c);
-        }));
-
-        // 3. Logs
-        const logsRef = collection(db, `${prefix}logs`);
-        const qLogs = isDemoMode ? query(logsRef, orderBy('timestamp', 'desc'), limit(15)) : query(logsRef, where('userId', '==', uid), limit(50));
-        unsubs.push(onSnapshot(qLogs, (snap) => {
-           let l: any[] = [];
-           snap.forEach(d => l.push({ id: d.id, ...d.data() }));
-           if (!isDemoMode) {
-             l.sort((a,b) => b.timestamp - a.timestamp);
-             l = l.slice(0, 15);
-           }
-           setLogs(l);
-        }, (err) => handleFirestoreError(err, OperationType.GET, `${prefix}logs`)));
-
-      });
-    } else {
+    if (!isDemoMode || !userProfile) {
+      setLogs([]);
       setNodeA({ uv365: 0, online: false, battery: 0, voltage: 0, led: false });
       setNodeB({ uv395: 0, online: false, battery: 0, voltage: 0, led: false });
-      setChartData([]);
-      setLogs([]);
+      return;
     }
 
-    return () => {
-       unsubs.forEach(u => u());
-    };
-  }, [isDemoMode, user]);
+    let now = Date.now();
+    const initialLogs = [
+      { id: 1, timestamp: now - 30000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)' },
+      { id: 2, timestamp: now - 150000, source: 'Node B (UV 395 nm)', action: 'IR Terpicu (+1)' },
+      { id: 3, timestamp: now - 450000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)' },
+      { id: 4, timestamp: now - 900000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)' },
+      { id: 5, timestamp: now - 1200000, source: 'Node B (UV 395 nm)', action: 'IR Terpicu (+1)' }
+    ];
+    setLogs(initialLogs);
+    setNodeA({ uv365: 142, online: true, battery: 85, voltage: 13.6, led: true });
+    setNodeB({ uv395: 98, online: true, battery: 62, voltage: 13.1, led: true });
+  }, [isDemoMode, userProfile]);
 
-  const generateLogsSync = async () => {
-    try {
-      const prefix = isDemoMode ? 'demo_' : '';
-      const uid = user ? user.uid : null;
-      if (!isDemoMode && !uid) return;
-      
+  useEffect(() => {
+    if (!isDemoMode || !userProfile) {
+      setChartData([]);
+      return;
+    }
+    let labels: string[] = [];
+    let dataA: number[] = [];
+    let dataB: number[] = [];
+
+    if (timeRange === 'hari') {
+        const count = timeDuration === 'hari_ini' ? 1 : timeDuration === '3_hari' ? 3 : 7;
+        if (timeDuration === 'hari_ini') {
+            labels = ['18:00', '19:00', '20:00', '21:00', '22:00', '23:00', '00:00', '01:00', '02:00', '03:00', '04:00', '05:00', '06:00'];
+            dataA = [2, 15, 30, 45, 25, 10, 5, 3, 2, 1, 2, 1, 1];
+            dataB = [1, 10, 20, 32, 18, 8, 4, 2, 1, 1, 0, 1, 0];
+        } else {
+            labels = Array.from({length: count}, (_, i) => `H-${count - 1 - i}`);
+            dataA = Array.from({length: labels.length}, () => Math.floor(Math.random() * 80) + 20);
+            dataB = Array.from({length: labels.length}, () => Math.floor(Math.random() * 50) + 10);
+        }
+    } else if (timeRange === 'minggu') {
+        const count = timeDuration === 'minggu_ini' ? 1 : timeDuration === '4_minggu' ? 4 : 7;
+        if (timeDuration === 'minggu_ini') {
+            labels = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+            dataA = [120, 150, 100, 180, 142, 130, 160];
+            dataB = [80, 95, 70, 110, 98, 85, 105];
+        } else {
+            labels = Array.from({length: count}, (_, i) => `Minggu ke-${count - i}`);
+            dataA = Array.from({length: labels.length}, () => Math.floor(Math.random() * 800) + 100);
+            dataB = Array.from({length: labels.length}, () => Math.floor(Math.random() * 500) + 80);
+        }
+    } else if (timeRange === 'bulan') {
+        const count = timeDuration === 'bulan_ini' ? 1 : timeDuration === '3_bulan' ? 3 : 6;
+        if (timeDuration === 'bulan_ini') {
+            labels = ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'];
+            dataA = [500, 600, 550, 620];
+            dataB = [350, 400, 380, 450];
+        } else {
+            labels = Array.from({length: count}, (_, i) => `Bulan ke-${count - i}`);
+            dataA = Array.from({length: labels.length}, () => Math.floor(Math.random() * 2500) + 500);
+            dataB = Array.from({length: labels.length}, () => Math.floor(Math.random() * 1800) + 300);
+        }
+    } else if (timeRange === 'tahun') {
+        const count = timeDuration === 'tahun_ini' ? 1 : timeDuration === '2_tahun' ? 2 : 5;
+        if (timeDuration === 'tahun_ini') {
+            labels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+            dataA = [1000, 1200, 1500, 2000, 2500, 3000, 2800, 2000, 1800, 1500, 1200, 1100];
+            dataB = [800, 900, 1100, 1400, 1800, 2200, 2000, 1500, 1300, 1100, 900, 850];
+        } else {
+            const currentYear = new Date().getFullYear();
+            labels = Array.from({length: count}, (_, i) => `${currentYear - (count - 1 - i)}`);
+            dataA = Array.from({length: labels.length}, () => Math.floor(Math.random() * 25000) + 5000);
+            dataB = Array.from({length: labels.length}, () => Math.floor(Math.random() * 18000) + 3000);
+        }
+    }
+
+    const initialChartData = labels.map((time, i) => ({
+      time, NodeA: dataA[i], NodeB: dataB[i]
+    }));
+    setChartData(initialChartData);
+  }, [isDemoMode, userProfile, timeRange, timeDuration]);
+
+  useEffect(() => {
+    if (!isDemoMode || !userProfile) {
+      setEffectChartData({NodeA: 0, NodeB: 0});
+      return;
+    }
+    
+    let sumA = 0;
+    let sumB = 0;
+    
+    if (effectTimeRange === 'hari') {
+        const count = effectTimeDuration === 'hari_ini' ? 1 : effectTimeDuration === '3_hari' ? 3 : 7;
+        if (effectTimeDuration === 'hari_ini') {
+            sumA = 142; // Fallbacks
+            sumB = 98;
+        } else {
+            sumA = Array.from({length: count}, () => Math.floor(Math.random() * 80) + 20).reduce((a, b) => a + b, 0);
+            sumB = Array.from({length: count}, () => Math.floor(Math.random() * 50) + 10).reduce((a, b) => a + b, 0);
+        }
+    } else if (effectTimeRange === 'minggu') {
+        const count = effectTimeDuration === 'minggu_ini' ? 1 : effectTimeDuration === '4_minggu' ? 4 : 7;
+        if (effectTimeDuration === 'minggu_ini') {
+            sumA = [120, 150, 100, 180, 142, 130, 160].reduce((a, b) => a + b, 0);
+            sumB = [80, 95, 70, 110, 98, 85, 105].reduce((a, b) => a + b, 0);
+        } else {
+            sumA = Array.from({length: count}, () => Math.floor(Math.random() * 800) + 100).reduce((a, b) => a + b, 0);
+            sumB = Array.from({length: count}, () => Math.floor(Math.random() * 500) + 80).reduce((a, b) => a + b, 0);
+        }
+    } else if (effectTimeRange === 'bulan') {
+        const count = effectTimeDuration === 'bulan_ini' ? 1 : effectTimeDuration === '3_bulan' ? 3 : 6;
+        if (effectTimeDuration === 'bulan_ini') {
+            sumA = [500, 600, 550, 620].reduce((a, b) => a + b, 0);
+            sumB = [350, 400, 380, 450].reduce((a, b) => a + b, 0);
+        } else {
+            sumA = Array.from({length: count}, () => Math.floor(Math.random() * 2500) + 500).reduce((a, b) => a + b, 0);
+            sumB = Array.from({length: count}, () => Math.floor(Math.random() * 1800) + 300).reduce((a, b) => a + b, 0);
+        }
+    } else if (effectTimeRange === 'tahun') {
+        const count = effectTimeDuration === 'tahun_ini' ? 1 : effectTimeDuration === '2_tahun' ? 2 : 5;
+        if (effectTimeDuration === 'tahun_ini') {
+            sumA = [1000, 1200, 1500, 2000, 2500, 3000, 2800, 2000, 1800, 1500, 1200, 1100].reduce((a, b) => a + b, 0);
+            sumB = [800, 900, 1100, 1400, 1800, 2200, 2000, 1500, 1300, 1100, 900, 850].reduce((a, b) => a + b, 0);
+        } else {
+            sumA = Array.from({length: count}, () => Math.floor(Math.random() * 25000) + 5000).reduce((a, b) => a + b, 0);
+            sumB = Array.from({length: count}, () => Math.floor(Math.random() * 18000) + 3000).reduce((a, b) => a + b, 0);
+        }
+    }
+    
+    setEffectChartData({NodeA: sumA, NodeB: sumB});
+  }, [isDemoMode, userProfile, effectTimeRange, effectTimeDuration]);
+
+  const generateLogsSync = () => {
       const sources = ['Node A (UV 365 nm)', 'Node B (UV 395 nm)'];
       const source = sources[Math.floor(Math.random() * sources.length)];
-      
       const isNodeA = source.includes('365');
       
-      const newLog: any = {
+      const newLog = {
+        id: Date.now() + Math.random().toString(36).substr(2, 9),
         timestamp: Date.now(),
         source: source,
         action: 'IR Terpicu (+1)',
       };
-      if (!isDemoMode && uid) {
-        newLog.userId = uid;
-      }
       
-      await addDoc(collection(db, `${prefix}logs`), newLog);
+      setLogs(prev => [newLog, ...prev].slice(0, 15));
 
-      // Increment count on Nodes
-      const nodeDoc = doc(db, `${prefix}nodes`, isDemoMode ? (isNodeA ? 'NodeA' : 'NodeB') : (isNodeA ? `NodeA_${uid}` : `NodeB_${uid}`));
-      const snap = await getDoc(nodeDoc);
-      if (snap.exists()) {
-        const d = snap.data();
-        if (isNodeA) {
-          await setDoc(nodeDoc, { uv365: (d.uv365 || 0) + 1 }, { merge: true });
-        } else {
-          await setDoc(nodeDoc, { uv395: (d.uv395 || 0) + 1 }, { merge: true });
-        }
+      if (isNodeA) {
+        setNodeA(prev => ({ ...prev, uv365: prev.uv365 + 1 }));
+      } else {
+        setNodeB(prev => ({ ...prev, uv395: prev.uv395 + 1 }));
       }
+  };
 
-    } catch(e) {
-      handleFirestoreError(e, OperationType.WRITE, 'logs');
+  const syncToGoogleSheet = async () => {
+    setIsSyncingSheet(true);
+    try {
+      const dataPayload = {
+        action: 'syncData',
+        logs: dataRef.current.logs,
+        nodeA: dataRef.current.nodeA,
+        nodeB: dataRef.current.nodeB,
+        chartData: dataRef.current.chartData,
+        isDemoMode: isDemoMode,
+        email: userProfile?.email
+      };
+      
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(dataPayload)
+      });
+      
+      const result = await response.json();
+      if (result.status === 'success') {
+        // Berhasil sinkronisasi
+      } else {
+        throw new Error(result.message || 'Unknown error');
+      }
+    } catch (e: any) {
+       console.error("Sync error:", e);
+    } finally {
+      setIsSyncingSheet(false);
     }
   };
 
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+  const validateEmail = (email: string) => {
+    return String(email)
+      .toLowerCase()
+      .match(
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+      );
+  };
+
+  const validatePassword = (password: string) => {
+    // Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special character
+    const re = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    return re.test(password);
+  };
+
+  const submitAuth = async () => {
+    setLoginError('');
+    if (!loginEmail || !loginPassword) {
+       setLoginError("Mohon lengkapi email dan password!");
+       return;
+    }
+    if (!validateEmail(loginEmail)) {
+        setLoginError("Format email tidak valid atau bukan email asli!");
+        return;
+    }
+    
+    if (loginMode === 'register' && !validatePassword(loginPassword)) {
+        setLoginError("Password lemah! Minimal 8 karakter, mencakup huruf besar, huruf kecil, angka, dan simbol khusus (seperti @$!%*?&).");
+        return;
+    }
+
+    setIsAuthLoading(true);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: loginMode,
+          email: loginEmail,
+          password: loginPassword,
+          name: loginMode === 'register' ? loginName : undefined,
+          photoURL: loginMode === 'register' ? loginPhoto : undefined,
+          coverUrl: loginMode === 'register' ? loginCover : undefined,
+          isDemoMode: isDemoMode
+        })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+         setLoginSuccess(true);
+         setTimeout(() => {
+           const profile = {
+               displayName: result.data ? result.data.name || loginEmail.split('@')[0] : loginEmail.split('@')[0],
+               email: loginEmail,
+               photoURL: result.data ? result.data.photoURL || '' : '',
+               coverUrl: result.data ? result.data.coverUrl || '' : ''
+           };
+           setUserProfile(profile);
+           localStorage.setItem('userProfile', JSON.stringify(profile));
+           setLoginModalOpen(false);
+           setLoginSuccess(false);
+           setLoginEmail('');
+           setLoginPassword('');
+           setLoginName('');
+         }, 1500); // Wait 1.5s for animation
+      } else {
+         setLoginError(result.message || "Email atau password salah.");
+      }
+    } catch(e: any) {
+      setLoginError("Gagal menghubungi server. Pastikan koneksi internet aktif dan Google Script URL valid.");
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   const calculateAccuracy = () => {
@@ -544,12 +755,11 @@ export default function App() {
       const wsNodes = XLSX.utils.json_to_sheet(nodesData);
       XLSX.utils.book_append_sheet(wb, wsNodes, "Status Sensor");
 
-      if (user) {
+      if (userProfile) {
          const userData = [{
-             'Nama': user.displayName || 'Anonim',
-             'Email': user.email || 'Tidak ada',
-             'User ID': user.uid,
-             'Status Pengguna': isDemoMode ? 'Mode Demo' : 'Mode Terhubung',
+             'Nama': userProfile.displayName || 'Anonim',
+             'Email': userProfile.email || 'Tidak ada',
+             'Status Pengguna': 'Mode Terhubung Offline',
          }];
          const wsUser = XLSX.utils.json_to_sheet(userData);
          XLSX.utils.book_append_sheet(wb, wsUser, "Data Pengguna");
@@ -561,8 +771,18 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden text-gray-800 bg-gray-100 dark:bg-[#111827] dark:text-gray-200 transition-colors duration-300 font-sans">
+    <div className="relative flex h-screen overflow-hidden text-gray-800 bg-gray-50 dark:bg-gray-950 dark:text-gray-200 transition-colors duration-500 font-sans">
       
+      {/* Decorative Blur Backgrounds */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-emerald-400/10 dark:bg-emerald-900/20 blur-[120px] mix-blend-multiply dark:mix-blend-lighten" />
+        <div className="absolute top-[40%] -right-[10%] w-[40%] h-[60%] rounded-full bg-teal-400/10 dark:bg-teal-900/20 blur-[100px] mix-blend-multiply dark:mix-blend-lighten" />
+        <div className="absolute -bottom-[20%] left-[20%] w-[60%] h-[50%] rounded-full bg-blue-400/10 dark:bg-blue-900/20 blur-[120px] mix-blend-multiply dark:mix-blend-lighten" />
+      </div>
+
+      {/* Main Container Wrapper */}
+      <div className="flex h-screen w-full relative z-10">
+
       {/* Sidebar Overlay */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden" onClick={() => setSidebarOpen(false)}></div>
@@ -586,41 +806,32 @@ export default function App() {
           </button>
         </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          <div className={cn("mb-4 flex items-center justify-between px-3 py-2 rounded-lg border", isDemoMode ? "bg-amber-900/40 border-amber-500/30 text-amber-300" : "bg-emerald-800/60 border-emerald-500/30 text-emerald-300")}>
+             <span className="text-xs font-semibold uppercase tracking-wider">Status Mode</span>
+             <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", isDemoMode ? "bg-amber-400 text-amber-900 border-amber-400" : "bg-emerald-400 text-emerald-900 border-emerald-400")}>
+                {isDemoMode ? 'DEMO' : 'ASLI'}
+             </span>
+          </div>
+
           <button onClick={() => { document.getElementById('dashboard-top')?.scrollIntoView({ behavior: 'smooth' }); setSidebarOpen(false); }} className="w-full flex items-center gap-3 bg-emerald-800 text-white p-3 rounded-lg font-medium transition text-left">
             <PieChart className="w-5 h-5"/> Dashboard
           </button>
-          
-          {(!nodeA.online || !nodeB.online) && (
-             <div className="mt-6 p-3 bg-red-900/40 border border-red-500/50 rounded-lg animate-pulse">
-                <div className="flex items-center gap-2 text-red-400 font-bold text-sm mb-1">
-                    <Wifi className="w-4 h-4" />
-                    Node Terputus!
-                </div>
-                <p className="text-xs text-red-200">
-                    {!nodeA.online && !nodeB.online 
-                        ? "Node A (365nm) dan Node B (395nm) sedang offline. Periksa alat segera." 
-                        : !nodeA.online 
-                        ? "Node A (365nm) sedang offline. Periksa koneksi atau baterai." 
-                        : "Node B (395nm) sedang offline. Periksa koneksi atau baterai."}
-                </p>
-             </div>
-          )}
         </nav>
         <div className="p-4 border-t border-emerald-800 w-full block">
-          {user ? (
+          {userProfile ? (
             <div className="flex items-center justify-between gap-3 w-full">
               <div className="flex items-center gap-3 w-full cursor-pointer hover:bg-emerald-800 p-2 rounded-lg transition-colors" onClick={() => { setProfileOpen(true); setSidebarOpen(false); }}>
-                <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} alt="avatar" className="w-10 h-10 rounded-full shrink-0" />
+                <img src={userProfile.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.displayName || 'User')}`} alt="avatar" className="w-10 h-10 rounded-full shrink-0" />
                 <div className="overflow-hidden flex-1">
-                  <p className="text-sm font-semibold truncate w-full">{user.displayName || "User"}</p>
-                  <p className="text-xs text-emerald-300 truncate w-full">{user.email || "user@example.com"}</p>
+                  <p className="text-sm font-semibold truncate w-full">{userProfile.displayName || "User"}</p>
+                  <p className="text-xs text-emerald-300 truncate w-full">{userProfile.email || "user@example.com"}</p>
                 </div>
               </div>
             </div>
           ) : (
-            <button onClick={handleLogin} className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 shadow-sm border border-emerald-600">
-              <div className="bg-white p-0.5 rounded-full"><img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="G" className="w-4 h-4" /></div>
-              Login dengan Google
+            <button onClick={() => { setLoginModalOpen(true); setSidebarOpen(false); }} className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 shadow-sm border border-emerald-600">
+              <div className="bg-white p-1 rounded-full"><LogIn className="w-4 h-4 text-emerald-600" /></div>
+              Login Akun
             </button>
           )}
         </div>
@@ -628,25 +839,43 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-         <header className="bg-white dark:bg-gray-800 h-16 flex items-center justify-between px-4 lg:px-8 border-b border-gray-200 dark:border-gray-700 shrink-0 z-10 shadow-sm transition-colors duration-300">
-            <div className="flex items-center gap-4">
-               <button className="md:hidden text-gray-500 hover:text-gray-700 dark:hover:text-white focus:outline-none" onClick={() => setSidebarOpen(true)}>
-                  <Menu className="w-6 h-6"/>
-               </button>
-               <h2 className="text-base sm:text-lg md:text-xl font-semibold text-gray-800 dark:text-white truncate">Ringkasan Pengamatan</h2>
+         <header className="bg-white dark:bg-gray-800 h-auto min-h-[4rem] py-3 lg:py-0 lg:h-16 flex flex-col lg:flex-row lg:items-center justify-between px-4 lg:px-8 border-b border-gray-200 dark:border-gray-700 shrink-0 z-10 shadow-sm transition-colors duration-300 gap-3 lg:gap-0">
+            <div className="flex items-center justify-between w-full lg:w-auto">
+               <div className="flex items-center gap-3 sm:gap-4">
+                  <button className="lg:hidden text-gray-500 hover:text-gray-700 dark:hover:text-white focus:outline-none" onClick={() => setSidebarOpen(true)}>
+                     <Menu className="w-6 h-6"/>
+                  </button>
+                  <h2 className="text-base sm:text-lg md:text-xl font-semibold text-gray-800 dark:text-white truncate flex items-center gap-2">
+                     Ringkasan Pengamatan
+                     <span className={cn("text-[10px] sm:text-xs px-2 py-0.5 rounded-full border hidden sm:inline-block", isDemoMode ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800" : "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800")}>
+                         {isDemoMode ? 'Mode Demo' : 'Mode Asli'}
+                     </span>
+                  </h2>
+               </div>
+               <button 
+                  onClick={() => setSettingsOpen(true)}
+                  className="lg:hidden w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none shrink-0"
+                >
+                    <SettingsIcon className="w-4 h-4"/>
+                </button>
             </div>
-            <div className="flex items-center gap-3 md:gap-4">
+            <div className="flex items-center justify-between lg:justify-end gap-2 md:gap-4 w-full lg:w-auto">
                 {!isOnline && (
-                  <div className="text-xs sm:text-sm font-semibold px-2 sm:px-3 py-1 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 flex items-center gap-1.5 shadow-sm">
+                  <div className="text-[10px] sm:text-sm font-semibold px-2 sm:px-3 py-1 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 flex items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0">
                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span> Offline Mode
                   </div>
                 )}
-                <div className="text-sm text-gray-500 dark:text-gray-400 font-medium hidden lg:flex items-center gap-2">
-                    <Clock className="w-4 h-4" /> <span>{time || '--/--/---- --:--'}</span>
+                <div className="flex bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm rounded-lg items-center px-2.5 sm:px-3.5 py-1.5 gap-1.5 sm:gap-2 transition-colors w-full lg:w-auto justify-center lg:justify-start">
+                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500 animate-[spin_4s_linear_infinite] shrink-0" />
+                    <div className="flex flex-row items-center justify-center gap-1.5 sm:gap-2 text-gray-700 dark:text-gray-300 font-mono tabular-nums tracking-tight leading-tight truncate">
+                        <span className="text-[10px] sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">{dateStr || '--/--/----'}</span>
+                        <span className="inline text-gray-300 dark:text-gray-600">•</span>
+                        <span className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white shrink-0">{timeStr || '--:--:--'}</span>
+                    </div>
                 </div>
                 <button 
                   onClick={() => setSettingsOpen(true)}
-                  className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none"
+                  className="hidden lg:flex w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none shrink-0"
                 >
                     <SettingsIcon className="w-5 h-5"/>
                 </button>
@@ -663,8 +892,26 @@ export default function App() {
                           <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-1">Total Tangkapan Sensor</p>
                           <h3 className="text-2xl font-bold text-gray-800 dark:text-white">Node A <span className="text-purple-600 dark:text-purple-400 text-sm">(365 nm)</span></h3>
                        </div>
-                       <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center text-purple-600 dark:text-purple-400">
-                          <Bug className="w-6 h-6"/>
+                       <div className="flex items-center gap-2">
+                           {isDemoMode && (
+                               <button 
+                                   onClick={() => setNodeA(prev => ({...prev, uv365: Math.max(0, prev.uv365 - 1)}))}
+                                   className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95"
+                                   title="Kurangi tangkapan (-1)"
+                               >
+                                  <Bug className="w-6 h-6"/>
+                               </button>
+                           )}
+                           <button 
+                               onClick={() => isDemoMode && setNodeA(prev => ({...prev, uv365: prev.uv365 + 1}))}
+                               className={cn(
+                                   "w-12 h-12 rounded-full flex items-center justify-center text-purple-600 dark:text-purple-400 transition-transform",
+                                   isDemoMode ? "bg-purple-200 dark:bg-purple-900/60 cursor-pointer hover:scale-110 active:scale-95" : "bg-purple-100 dark:bg-purple-900/40"
+                               )}
+                               title={isDemoMode ? "Tambah tangkapan (+1)" : ""}
+                           >
+                              <Bug className="w-6 h-6"/>
+                           </button>
                        </div>
                    </div>
                    <div className="mt-4 flex items-end gap-2">
@@ -680,8 +927,26 @@ export default function App() {
                           <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-1">Total Tangkapan Sensor</p>
                           <h3 className="text-2xl font-bold text-gray-800 dark:text-white">Node B <span className="text-blue-600 dark:text-blue-400 text-sm">(395 nm)</span></h3>
                        </div>
-                       <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400">
-                          <Bug className="w-6 h-6"/>
+                       <div className="flex items-center gap-2">
+                           {isDemoMode && (
+                               <button 
+                                   onClick={() => setNodeB(prev => ({...prev, uv395: Math.max(0, prev.uv395 - 1)}))}
+                                   className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95"
+                                   title="Kurangi tangkapan (-1)"
+                               >
+                                  <Bug className="w-6 h-6"/>
+                               </button>
+                           )}
+                           <button 
+                               onClick={() => isDemoMode && setNodeB(prev => ({...prev, uv395: prev.uv395 + 1}))}
+                               className={cn(
+                                   "w-12 h-12 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-transform",
+                                   isDemoMode ? "bg-blue-200 dark:bg-blue-900/60 cursor-pointer hover:scale-110 active:scale-95" : "bg-blue-100 dark:bg-blue-900/40"
+                               )}
+                               title={isDemoMode ? "Tambah tangkapan (+1)" : ""}
+                           >
+                              <Bug className="w-6 h-6"/>
+                           </button>
                        </div>
                    </div>
                    <div className="mt-4 flex items-end gap-2">
@@ -745,45 +1010,147 @@ export default function App() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6">
-                {/* Arrival Chart */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm">
-                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                       <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white">Fluktuasi Waktu Kedatangan</h3>
-                   </div>
-                   <div className="relative w-full h-64 md:h-72 min-h-[200px]">
-                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                         <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                           <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                           <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} />
-                           <YAxis stroke="#9ca3af" fontSize={12} />
-                           <Tooltip contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: 'white' }} />
-                           <Legend />
-                           <Line type="monotone" dataKey="NodeA" stroke="#8b5cf6" strokeWidth={3} dot={{r:4}} activeDot={{r: 6}} />
-                           <Line type="monotone" dataKey="NodeB" stroke="#3b82f6" strokeWidth={3} dot={{r:4}} activeDot={{r: 6}} />
-                         </LineChart>
-                      </ResponsiveContainer>
-                   </div>
-                </div>
+            {isDemoMode && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6">
+                    {/* Arrival Chart */}
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm">
+                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                           <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white">Fluktuasi Waktu Kedatangan</h3>
+                           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                               {isDemoMode && (
+                                   <select
+                                       value={timeDuration}
+                                       onChange={(e) => setTimeDuration(e.target.value)}
+                                       className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                                   >
+                                       {timeRange === 'hari' && <>
+                                           <option value="hari_ini">Hari Ini</option>
+                                           <option value="3_hari">3 Hari Terakhir</option>
+                                           <option value="7_hari">7 Hari Terakhir</option>
+                                       </>}
+                                       {timeRange === 'minggu' && <>
+                                           <option value="minggu_ini">Minggu Ini</option>
+                                           <option value="4_minggu">4 Minggu Terakhir</option>
+                                           <option value="7_minggu">7 Minggu Terakhir</option>
+                                       </>}
+                                       {timeRange === 'bulan' && <>
+                                           <option value="bulan_ini">Bulan Ini</option>
+                                           <option value="3_bulan">3 Bulan Terakhir</option>
+                                           <option value="6_bulan">6 Bulan Terakhir</option>
+                                       </>}
+                                       {timeRange === 'tahun' && <>
+                                           <option value="tahun_ini">Tahun Ini</option>
+                                           <option value="2_tahun">1-2 Tahun Terakhir</option>
+                                           <option value="5_tahun">5 Tahun Terakhir</option>
+                                       </>}
+                                   </select>
+                               )}
+                               <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
+                                   {(['hari', 'minggu', 'bulan', 'tahun'] as const).map(t => (
+                                       <button 
+                                           key={t}
+                                           onClick={() => {
+                                               setTimeRange(t);
+                                               setTimeDuration(t + '_ini');
+                                           }}
+                                           className={cn(
+                                               "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                                               timeRange === t ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                                           )}
+                                       >
+                                           {t}
+                                       </button>
+                                   ))}
+                               </div>
+                           </div>
+                       </div>
+                       <div className="relative w-full h-64 md:h-72 min-h-[200px]">
+                          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                             <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                               <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                               <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} />
+                               <YAxis stroke="#9ca3af" fontSize={12} />
+                               <Tooltip contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: 'white' }} />
+                               <Legend />
+                               <Line type="monotone" dataKey="NodeA" stroke="#8b5cf6" strokeWidth={3} dot={{r:4}} activeDot={{r: 6}} />
+                               <Line type="monotone" dataKey="NodeB" stroke="#3b82f6" strokeWidth={3} dot={{r:4}} activeDot={{r: 6}} />
+                             </LineChart>
+                          </ResponsiveContainer>
+                       </div>
+                    </div>
 
-                {/* Comparison Chart */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm">
-                   <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white mb-4">Perbandingan Efektivitas</h3>
-                   <div className="relative w-full h-64 md:h-72 min-h-[200px]">
-                       <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                          <BarChart data={[{ name: 'Total Tangkapan', NodeA: nodeA.uv365, NodeB: nodeB.uv395 }]}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                              <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                              <YAxis stroke="#9ca3af" fontSize={12} />
-                              <Tooltip contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: 'white' }} cursor={{fill: 'rgba(255,255,255,0.05)'}}/>
-                              <Legend />
-                              <Bar dataKey="NodeA" name="UV 365 nm" fill="#8b5cf6" radius={[6,6,0,0]} barSize={40} />
-                              <Bar dataKey="NodeB" name="UV 395 nm" fill="#3b82f6" radius={[6,6,0,0]} barSize={40} />
-                          </BarChart>
-                       </ResponsiveContainer>
-                   </div>
+                    {/* Comparison Chart */}
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm">
+                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                           <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white">Perbandingan Efektivitas</h3>
+                           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                               {isDemoMode && (
+                                   <select
+                                       value={effectTimeDuration}
+                                       onChange={(e) => setEffectTimeDuration(e.target.value)}
+                                       className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                                   >
+                                       {effectTimeRange === 'hari' && <>
+                                           <option value="hari_ini">Hari Ini</option>
+                                           <option value="3_hari">3 Hari Terakhir</option>
+                                           <option value="7_hari">7 Hari Terakhir</option>
+                                       </>}
+                                       {effectTimeRange === 'minggu' && <>
+                                           <option value="minggu_ini">Minggu Ini</option>
+                                           <option value="4_minggu">4 Minggu Terakhir</option>
+                                           <option value="7_minggu">7 Minggu Terakhir</option>
+                                       </>}
+                                       {effectTimeRange === 'bulan' && <>
+                                           <option value="bulan_ini">Bulan Ini</option>
+                                           <option value="3_bulan">3 Bulan Terakhir</option>
+                                           <option value="6_bulan">6 Bulan Terakhir</option>
+                                       </>}
+                                       {effectTimeRange === 'tahun' && <>
+                                           <option value="tahun_ini">Tahun Ini</option>
+                                           <option value="2_tahun">1-2 Tahun Terakhir</option>
+                                           <option value="5_tahun">5 Tahun Terakhir</option>
+                                       </>}
+                                   </select>
+                               )}
+                               <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
+                                   {(['hari', 'minggu', 'bulan', 'tahun'] as const).map(t => (
+                                       <button 
+                                           key={t}
+                                           onClick={() => {
+                                               setEffectTimeRange(t);
+                                               setEffectTimeDuration(t + '_ini');
+                                           }}
+                                           className={cn(
+                                               "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                                               effectTimeRange === t ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                                           )}
+                                       >
+                                           {t}
+                                       </button>
+                                   ))}
+                               </div>
+                           </div>
+                       </div>
+                       <div className="relative w-full h-64 md:h-72 min-h-[200px]">
+                           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                              <BarChart data={[{ 
+                                  name: 'Total Tangkapan', 
+                                  NodeA: isDemoMode ? effectChartData.NodeA : nodeA.uv365, 
+                                  NodeB: isDemoMode ? effectChartData.NodeB : nodeB.uv395 
+                              }]}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                                  <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
+                                  <YAxis stroke="#9ca3af" fontSize={12} />
+                                  <Tooltip contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: 'white' }} cursor={{fill: 'rgba(255,255,255,0.05)'}}/>
+                                  <Legend />
+                                  <Bar dataKey="NodeA" name="UV 365 nm" fill="#8b5cf6" radius={[6,6,0,0]} barSize={40} />
+                                  <Bar dataKey="NodeB" name="UV 395 nm" fill="#3b82f6" radius={[6,6,0,0]} barSize={40} />
+                              </BarChart>
+                           </ResponsiveContainer>
+                       </div>
+                    </div>
                 </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6" id="log-section">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm">
@@ -794,10 +1161,41 @@ export default function App() {
                               <Download className="w-4 h-4"/>
                               <span className="hidden sm:inline">Unduh Excel</span>
                            </button>
-                           <button onClick={generateLogsSync} className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 transition-colors" title="Sinkronisasi Log">
-                              <RotateCcw className="w-5 h-5"/>
+                           <button onClick={syncToGoogleSheet} disabled={isSyncingSheet} className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200 dark:text-blue-300 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 transition-colors text-sm font-semibold disabled:opacity-50" title="Kirim ke Google Sheet">
+                              {isSyncingSheet ? <Loader2 className="w-4 h-4 animate-spin"/> : <Database className="w-4 h-4"/>}
+                              <span className="hidden sm:inline">Simpan API</span>
                            </button>
+                           {isDemoMode && (
+                             <button onClick={generateLogsSync} className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 transition-colors" title="Sinkronisasi Log">
+                                <RotateCcw className="w-5 h-5"/>
+                             </button>
+                           )}
                        </div>
+                   </div>
+                   <div className="flex flex-col sm:flex-row gap-2 mb-4 bg-gray-50 dark:bg-gray-800/50 p-2 sm:p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                       <select 
+                           value={filterSource}
+                           onChange={(e) => setFilterSource(e.target.value)}
+                           className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
+                       >
+                           <option value="all">Semua Node (Sumber)</option>
+                           <option value="Node A (UV 365 nm)">Node A (UV 365 nm)</option>
+                           <option value="Node B (UV 395 nm)">Node B (UV 395 nm)</option>
+                       </select>
+                       <input 
+                           type="date"
+                           value={filterStartDate}
+                           onChange={(e) => setFilterStartDate(e.target.value)}
+                           className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
+                           title="Tanggal Mulai"
+                       />
+                       <input 
+                           type="date"
+                           value={filterEndDate}
+                           onChange={(e) => setFilterEndDate(e.target.value)}
+                           className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
+                           title="Tanggal Akhir"
+                       />
                    </div>
                    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 max-h-80 overflow-y-auto">
                        <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400 whitespace-nowrap">
@@ -809,18 +1207,25 @@ export default function App() {
                                </tr>
                            </thead>
                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                               {logs.length === 0 ? (
+                               {filteredLogs.length === 0 ? (
                                    <tr>
                                        <td colSpan={3} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                                            <SatelliteDish className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                                           Menunggu koneksi dan data masuk...
+                                           {logs.length === 0 ? "Menunggu koneksi dan data masuk..." : "Tidak ada log yang sesuai dengan filter."}
                                        </td>
                                    </tr>
-                               ) : logs.map((log) => (
-                                   <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                               ) : filteredLogs.map((log) => (
+                                   <tr 
+                                       key={log.id} 
+                                       className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition cursor-help relative group"
+                                       title={`Detail Aktivitas:\nWaktu: ${new Date(log.timestamp).toLocaleString('id-ID')}\nSumber: ${log.source}\nAksi Lengkap: Hama terdeteksi memotong pancaran sensor inframerah (${log.action || 'IR Terpicu (+1)'}). Data berhasil direkam sistem.`}
+                                   >
                                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-200">{new Date(log.timestamp).toLocaleTimeString('id-ID')}</td>
                                        <td className="px-4 py-3 dark:text-gray-300">{log.source}</td>
-                                       <td className="px-4 py-3 text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-4 h-4"/> {log.action || 'IR Terpicu (+1)'}</td>
+                                       <td className="px-4 py-3 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                           <CheckCircle2 className="w-4 h-4"/> 
+                                           <span className="underline decoration-emerald-300 dark:decoration-emerald-700 decoration-dashed underline-offset-4">{log.action || 'IR Terpicu (+1)'}</span>
+                                       </td>
                                    </tr>
                                ))}
                            </tbody>
@@ -828,6 +1233,7 @@ export default function App() {
                    </div>
                 </div>
 
+                {isDemoMode && (
                 <div className="bg-emerald-50/50 dark:bg-emerald-900/20 rounded-2xl p-4 md:p-5 border border-emerald-100 dark:border-emerald-800/30">
                    <div className="flex items-center gap-2 mb-4">
                        <Microscope className="text-emerald-600 dark:text-emerald-400 w-6 h-6" />
@@ -864,6 +1270,7 @@ export default function App() {
                        )}
                    </div>
                 </div>
+                )}
             </div>
 
             <footer className="mt-8 text-center text-xs text-gray-400 dark:text-gray-500 pb-4">
@@ -885,7 +1292,16 @@ export default function App() {
                   <div className="p-5 space-y-6">
                       <div>
                           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Sumber Data (Koneksi)</label>
-                          <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-1.5 border border-emerald-200 dark:border-emerald-800 cursor-pointer w-full" onClick={() => setIsDemoMode(!isDemoMode)}>
+                          <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-1.5 border border-emerald-200 dark:border-emerald-800 cursor-pointer w-full" onClick={() => {
+                              const newVal = !isDemoMode;
+                              setIsDemoMode(newVal);
+                              localStorage.setItem('isDemoMode', String(newVal));
+                              
+                              // Logout otomatis saat berpindah mode
+                              setUserProfile(null);
+                              localStorage.removeItem('userProfile');
+                              setSheetSettingsOpen(false); // Opsional tutup modal settings
+                          }}>
                               <div className={cn("flex-1 text-center py-2.5 text-xs sm:text-sm font-bold rounded-md transition-all", isDemoMode ? "bg-white dark:bg-emerald-700 shadow-sm text-emerald-700 dark:text-white" : "text-emerald-600 dark:text-emerald-400")}>
                                   DATA DEMO
                               </div>
@@ -893,16 +1309,16 @@ export default function App() {
                                   DATA ASLI
                               </div>
                           </div>
-                           {!user && !isDemoMode && (
-                              <p className="text-[11px] text-red-500 dark:text-red-400 mt-2 text-center">Harap Login untuk mengakses data asli.</p>
-                           )}
-                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 text-center">Gunakan mode demo untuk keperluan presentasi.</p>
                       </div>
                       <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
                           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Tema Tampilan</label>
                           <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1.5 border border-gray-200 dark:border-gray-700 w-full justify-between gap-1">
                               {['light', 'system', 'dark'].map((t) => (
-                                  <button key={t} onClick={() => setTheme(t as any)} className={cn("flex-1 py-2 rounded-md flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-colors text-xs font-medium capitalize", theme === t ? "bg-white dark:bg-gray-600 shadow-sm text-emerald-600 dark:text-emerald-400" : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-300")}>
+                                  <button key={t} onClick={() => {
+                                      setTheme(t as any);
+                                      localStorage.setItem('theme', t);
+                                      setSettingsOpen(false);
+                                  }} className={cn("flex-1 py-2 rounded-md flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-colors text-xs font-medium capitalize", theme === t ? "bg-white dark:bg-gray-600 shadow-sm text-emerald-600 dark:text-emerald-400" : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-300")}>
                                       {t === 'light' ? 'Terang' : t === 'dark' ? 'Gelap' : 'Sistem'}
                                   </button>
                               ))}
@@ -916,8 +1332,126 @@ export default function App() {
           </div>
       )}
 
+      {/* Login Modal */}
+      {isLoginModalOpen && (
+        <div className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity" onClick={(e) => {
+            if(e.target === e.currentTarget) {
+               setLoginModalOpen(false);
+            }
+        }}>
+            <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden transform transition-all duration-300 ease-out">
+                <div className="p-6 sm:p-8">
+                    <div className="flex justify-between items-center mb-8">
+                        <h3 className="font-extrabold text-2xl text-gray-900 dark:text-white tracking-tight">
+                            {loginMode === 'login' ? 'Masuk' : 'Daftar Akun'}
+                        </h3>
+                        <button onClick={() => setLoginModalOpen(false)} className="text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 p-2 rounded-full transition-colors" disabled={loginSuccess}>
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+                    {loginSuccess ? (
+                        <div className="py-12 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
+                            <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
+                                <CheckCircle2 className="w-10 h-10" />
+                            </div>
+                            <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Berhasil!</h4>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 text-center">Redirecting...</p>
+                        </div>
+                    ) : (
+                    <>
+                    {loginError && (
+                        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2 text-red-600 dark:text-red-400 text-sm">
+                            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                            <span>{loginError}</span>
+                        </div>
+                    )}
+                    <form onSubmit={(e) => { e.preventDefault(); submitAuth(); }} className="space-y-5 max-h-[70vh] overflow-y-auto px-1 scrollbar-hide">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Email</label>
+                            <input 
+                                type="email" 
+                                value={loginEmail} 
+                                onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }} 
+                                className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 outline-none transition-all" 
+                                placeholder="nama@contoh.com"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Password</label>
+                            <div className="relative">
+                                <input 
+                                    type={showPassword ? "text" : "password"} 
+                                    value={loginPassword} 
+                                    onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }} 
+                                    className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 pr-11 outline-none transition-all" 
+                                    placeholder="••••••••"
+                                    required
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute inset-y-0 right-2 flex items-center p-2 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-lg"
+                                >
+                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                </button>
+                            </div>
+                            {loginMode === 'register' && (
+                                <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 ml-1 leading-relaxed">
+                                    Min. 8 karakter, mencakup huruf besar & kecil, angka, dan simbol khusus (@$!%*?&).
+                                </p>
+                            )}
+                        </div>
+                        {loginMode === 'register' && (
+                            <div className="space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Nama Lengkap</label>
+                                    <input 
+                                        type="text" 
+                                        value={loginName} 
+                                        onChange={(e) => setLoginName(e.target.value)} 
+                                        className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 outline-none transition-all" 
+                                        placeholder="Opsional"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <ImageUpload 
+                                        label="Foto Profil" 
+                                        icon={Camera} 
+                                        value={loginPhoto} 
+                                        onImageUploaded={setLoginPhoto} 
+                                        type="photo" 
+                                    />
+                                    <ImageUpload 
+                                        label="Foto Sampul" 
+                                        icon={ImageIcon} 
+                                        value={loginCover} 
+                                        onImageUploaded={setLoginCover} 
+                                        type="cover" 
+                                    />
+                                </div>
+                            </div>
+                        )}
+                        <button type="submit" disabled={isAuthLoading} className="w-full mt-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all hover:shadow-lg hover:shadow-emerald-600/20 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 disabled:hover:scale-100">
+                            {isAuthLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
+                            {loginMode === 'login' ? 'Masuk' : 'Daftar Sekarang'}
+                        </button>
+                    </form>
+                    <div className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        {loginMode === 'login' ? "Belum punya akun?" : "Sudah punya akun?"}{' '}
+                        <button type="button" onClick={() => { setLoginMode(loginMode === 'login' ? 'register' : 'login'); setLoginError(''); }} className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold transition-colors underline decoration-2 underline-offset-4" disabled={loginSuccess}>
+                            {loginMode === 'login' ? 'Daftar di sini' : 'Masuk di sini'}
+                        </button>
+                    </div>
+                    </>
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* Profile Modal */}
-      {isProfileOpen && user && (
+      {isProfileOpen && (
           <div className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity" onClick={(e) => {
               if(e.target === e.currentTarget) {
                  setProfileOpen(false);
@@ -971,16 +1505,21 @@ export default function App() {
                               <Edit2 className="w-4 h-4 drop-shadow-md"/>
                           </button>
                           <div className="absolute -bottom-10 border-4 border-white dark:border-gray-800 rounded-full bg-white dark:bg-gray-800 shadow-md">
-                              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} alt="avatar" className="w-20 h-20 rounded-full object-cover bg-white dark:bg-gray-800" />
+                              <img src={userProfile.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.displayName || 'User')}`} alt="avatar" className="w-20 h-20 rounded-full object-cover bg-white dark:bg-gray-800" />
                           </div>
                       </div>
                       <div className="pt-14 pb-6 px-6 text-center">
-                          <h3 className="font-bold text-xl text-gray-900 dark:text-white">{user.displayName || "User"}</h3>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{user.email}</p>
+                          <h3 className="font-bold text-xl text-gray-900 dark:text-white">{userProfile.displayName || "User"}</h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{userProfile.email}</p>
                           
                           <div className="space-y-3">
-                              <button onClick={() => { signOut(auth); setProfileOpen(false); }} className="w-full py-2.5 bg-gray-50 text-gray-700 hover:bg-red-50 hover:text-red-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-red-900/30 dark:hover:text-red-400 border border-gray-200 dark:border-gray-600 dark:hover:border-red-900/50 hover:border-red-200 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
-                                  Logout
+                              <button onClick={() => { 
+                                setIsLogoutConfirmOpen(true);
+                              }} className="w-full py-2.5 bg-gray-50 text-red-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-red-400 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+                                  Logout / Keluar Akun
+                              </button>
+                              <button onClick={() => { setProfileOpen(false); }} className="w-full py-2.5 bg-gray-50 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200  border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+                                  Tutup
                               </button>
                           </div>
                       </div>
@@ -990,18 +1529,37 @@ export default function App() {
           </div>
       )}
 
-      {/* Notifications Toast */}
-      {notifications.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-[90] flex flex-col gap-2">
-          {notifications.map(n => (
-            <div key={n.id} className="bg-red-600 border border-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
-              <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm font-medium">{n.text}</p>
+      {/* Logout Confirm Dialog */}
+      {isLogoutConfirmOpen && (
+        <div className="fixed inset-0 bg-gray-900/60 dark:bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center transition-opacity" onClick={(e) => {
+            if(e.target === e.currentTarget) setIsLogoutConfirmOpen(false);
+        }}>
+            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="p-6 text-center">
+                    <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-500 mx-auto flex items-center justify-center mb-4">
+                        <RotateCcw className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Konfirmasi Logout</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Apakah Anda yakin ingin keluar dari akun ini? Sesi Anda akan dihentikan.</p>
+                    <div className="flex gap-3">
+                        <button onClick={() => setIsLogoutConfirmOpen(false)} className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-semibold text-sm transition-colors">
+                            Batal
+                        </button>
+                        <button onClick={() => {
+                            setUserProfile(null);
+                            localStorage.removeItem('userProfile');
+                            setIsLogoutConfirmOpen(false);
+                            setProfileOpen(false);
+                        }} className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm transition-colors shadow-sm focus:ring-4 focus:ring-red-200 dark:focus:ring-red-900">
+                            Ya, Keluar
+                        </button>
+                    </div>
+                </div>
             </div>
-          ))}
         </div>
       )}
 
+      </div>
     </div>
   );
 }
