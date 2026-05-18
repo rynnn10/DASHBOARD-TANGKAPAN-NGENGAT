@@ -264,16 +264,28 @@ export default function App() {
   const [loginCover, setLoginCover] = useState('');
   const [loginMode, setLoginMode] = useState<'login' | 'register'>('login');
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isDataLoading, setIsDataLoading] = useState(true);
 
-  const [userProfile, setUserProfile] = useState<{ displayName: string, email: string, photoURL: string, coverUrl: string } | null>(() => {
+  const [userProfile, setUserProfile] = useState<{ displayName: string, email: string, photoURL: string, coverUrl: string, notificationsEnabled?: boolean, temperatureUnit?: 'C' | 'F', voltageUnit?: 'V' | 'mV' } | null>(() => {
      const saved = localStorage.getItem('userProfile');
      return saved ? JSON.parse(saved) : null;
   });
+
+  useEffect(() => {
+    setIsDataLoading(true);
+    const timer = setTimeout(() => {
+      setIsDataLoading(false);
+    }, 1200); // Simulate network latency
+    return () => clearTimeout(timer);
+  }, [isDemoMode, userProfile]);
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhotoUrl, setEditPhotoUrl] = useState('');
   const [editCoverUrl, setEditCoverUrl] = useState('');
+  const [editNotificationsEnabled, setEditNotificationsEnabled] = useState(true);
+  const [editTemperatureUnit, setEditTemperatureUnit] = useState<'C' | 'F'>('C');
+  const [editVoltageUnit, setEditVoltageUnit] = useState<'V' | 'mV'>('V');
 
   const handleSaveProfile = async () => {
     if (!userProfile) return;
@@ -281,7 +293,10 @@ export default function App() {
         ...userProfile,
         displayName: editName,
         photoURL: editPhotoUrl,
-        coverUrl: editCoverUrl
+        coverUrl: editCoverUrl,
+        notificationsEnabled: editNotificationsEnabled,
+        temperatureUnit: editTemperatureUnit,
+        voltageUnit: editVoltageUnit
     };
     setUserProfile(updatedProfile);
     localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
@@ -311,6 +326,9 @@ export default function App() {
     setEditName(userProfile.displayName || '');
     setEditPhotoUrl(userProfile.photoURL || '');
     setEditCoverUrl(userProfile.coverUrl || '');
+    setEditNotificationsEnabled(userProfile.notificationsEnabled ?? true);
+    setEditTemperatureUnit(userProfile.temperatureUnit || 'C');
+    setEditVoltageUnit(userProfile.voltageUnit || 'V');
     setIsEditingProfile(true);
   };
 
@@ -734,13 +752,14 @@ export default function App() {
       XLSX.utils.book_append_sheet(wb, wsChart, "Grafik Tangkapan");
 
       // Sheet 3: Sensor Status
+      const vUnit = userProfile?.voltageUnit === 'mV' ? 'mV' : 'V';
       const nodesData = [
         {
           'Nama Node': 'Node A (UV 365nm)',
           'Total Tangkapan': nodeA.uv365,
           'Status': nodeA.online ? 'Online' : 'Offline',
           'Baterai (%)': nodeA.battery,
-          'Tegangan (V)': nodeA.voltage,
+          [`Tegangan (${vUnit})`]: userProfile?.voltageUnit === 'mV' ? nodeA.voltage * 1000 : nodeA.voltage,
           'LED': nodeA.led ? 'Nyala' : 'Mati'
         },
         {
@@ -748,7 +767,7 @@ export default function App() {
           'Total Tangkapan': nodeB.uv395,
           'Status': nodeB.online ? 'Online' : 'Offline',
           'Baterai (%)': nodeB.battery,
-          'Tegangan (V)': nodeB.voltage,
+          [`Tegangan (${vUnit})`]: userProfile?.voltageUnit === 'mV' ? nodeB.voltage * 1000 : nodeB.voltage,
           'LED': nodeB.led ? 'Nyala' : 'Mati'
         }
       ];
@@ -967,7 +986,7 @@ export default function App() {
                        <div>
                            <div className="flex justify-between text-xs mb-1">
                                <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1"><Battery className="w-3 h-3"/> Baterai</span>
-                               <span className="font-bold text-gray-700 dark:text-gray-300">{nodeA.battery}% ({nodeA.voltage}V)</span>
+                               <span className="font-bold text-gray-700 dark:text-gray-300">{nodeA.battery}% ({userProfile?.voltageUnit === 'mV' ? nodeA.voltage * 1000 + 'mV' : nodeA.voltage + 'V'})</span>
                            </div>
                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                                <div className="bg-green-500 h-2 rounded-full transition-all duration-700" style={{ width: `${nodeA.battery}%` }}></div>
@@ -994,7 +1013,7 @@ export default function App() {
                        <div>
                            <div className="flex justify-between text-xs mb-1">
                                <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1"><BatteryMedium className="w-3 h-3"/> Baterai</span>
-                               <span className="font-bold text-gray-700 dark:text-gray-300">{nodeB.battery}% ({nodeB.voltage}V)</span>
+                               <span className="font-bold text-gray-700 dark:text-gray-300">{nodeB.battery}% ({userProfile?.voltageUnit === 'mV' ? nodeB.voltage * 1000 + 'mV' : nodeB.voltage + 'V'})</span>
                            </div>
                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                                <div className="bg-yellow-500 h-2 rounded-full transition-all duration-700" style={{ width: `${nodeB.battery}%` }}></div>
@@ -1065,6 +1084,11 @@ export default function App() {
                            </div>
                        </div>
                        <div className="relative w-full h-64 md:h-72 min-h-[200px]">
+                          {isDataLoading ? (
+                             <div className="w-full h-full flex flex-col gap-4">
+                                <div className="h-full w-full bg-gray-100 dark:bg-gray-700/50 rounded-lg animate-pulse backdrop-blur-sm"></div>
+                             </div>
+                          ) : (
                           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                                <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
@@ -1076,6 +1100,7 @@ export default function App() {
                                <Line type="monotone" dataKey="NodeB" stroke="#3b82f6" strokeWidth={3} dot={{r:4}} activeDot={{r: 6}} />
                              </LineChart>
                           </ResponsiveContainer>
+                          )}
                        </div>
                     </div>
 
@@ -1132,6 +1157,12 @@ export default function App() {
                            </div>
                        </div>
                        <div className="relative w-full h-64 md:h-72 min-h-[200px]">
+                          {isDataLoading ? (
+                             <div className="w-full h-full flex items-end justify-center gap-8 pb-8 pt-4">
+                                <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm" style={{ height: '70%' }}></div>
+                                <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm" style={{ height: '45%' }}></div>
+                             </div>
+                          ) : (
                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                               <BarChart data={[{ 
                                   name: 'Total Tangkapan', 
@@ -1147,6 +1178,7 @@ export default function App() {
                                   <Bar dataKey="NodeB" name="UV 395 nm" fill="#3b82f6" radius={[6,6,0,0]} barSize={40} />
                               </BarChart>
                            </ResponsiveContainer>
+                          )}
                        </div>
                     </div>
                 </div>
@@ -1207,7 +1239,15 @@ export default function App() {
                                </tr>
                            </thead>
                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                               {filteredLogs.length === 0 ? (
+                               {isDataLoading ? (
+                                   Array.from({ length: 4 }).map((_, i) => (
+                                       <tr key={i} className="animate-pulse">
+                                           <td className="px-4 py-3"><div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-24"></div></td>
+                                           <td className="px-4 py-3"><div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-32"></div></td>
+                                           <td className="px-4 py-3"><div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-20"></div></td>
+                                       </tr>
+                                   ))
+                               ) : filteredLogs.length === 0 ? (
                                    <tr>
                                        <td colSpan={3} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                                            <SatelliteDish className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
@@ -1461,14 +1501,14 @@ export default function App() {
               <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transform scale-100 transition-transform">
                   
                   {isEditingProfile ? (
-                     <div className="p-6">
-                        <div className="flex justify-between items-center mb-6">
+                     <div className="flex flex-col max-h-[85vh]">
+                        <div className="flex justify-between items-center p-5 sm:p-6 border-b border-gray-100 dark:border-gray-700/50 shrink-0">
                             <h3 className="font-bold text-lg text-gray-900 dark:text-white">Edit Profil</h3>
-                            <button onClick={() => setIsEditingProfile(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                            <button onClick={() => setIsEditingProfile(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                                <X className="w-5 h-5"/>
                             </button>
                         </div>
-                        <div className="space-y-4">
+                        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nama Lengkap</label>
                                 <input type="text" value={editName} onChange={e=>setEditName(e.target.value)} className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none" />
@@ -1487,6 +1527,44 @@ export default function App() {
                                 onImageUploaded={setEditCoverUrl} 
                                 type="cover" 
                             />
+                            
+                            <hr className="border-gray-200 dark:border-gray-700 my-2" />
+                            
+                            <div>
+                                <label className="flex items-center justify-between cursor-pointer">
+                                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Notifikasi</span>
+                                  <div className="relative">
+                                    <input type="checkbox" className="sr-only" checked={editNotificationsEnabled} onChange={(e) => setEditNotificationsEnabled(e.target.checked)} />
+                                    <div className={`block w-10 h-6 rounded-full transition-colors ${editNotificationsEnabled ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${editNotificationsEnabled ? 'transform translate-x-4' : ''}`}></div>
+                                  </div>
+                                </label>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Satuan Suhu Default</label>
+                                <select 
+                                    value={editTemperatureUnit} 
+                                    onChange={e=>setEditTemperatureUnit(e.target.value as 'C'|'F')} 
+                                    className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none"
+                                >
+                                    <option value="C">Celsius (°C)</option>
+                                    <option value="F">Fahrenheit (°F)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Satuan Tegangan Default</label>
+                                <select 
+                                    value={editVoltageUnit} 
+                                    onChange={e=>setEditVoltageUnit(e.target.value as 'V'|'mV')} 
+                                    className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none"
+                                >
+                                    <option value="V">Volt (V)</option>
+                                    <option value="mV">Milivolt (mV)</option>
+                                </select>
+                            </div>
+
                             <button onClick={handleSaveProfile} className="w-full mt-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
                                 <Save className="w-4 h-4" /> Simpan Perubahan
                             </button>
