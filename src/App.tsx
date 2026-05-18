@@ -659,6 +659,32 @@ export default function App() {
     return re.test(password);
   };
 
+  const getPasswordStrength = (password: string) => {
+    let score = 0;
+    if (!password) return 0;
+    if (password.length >= 8) score += 1;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
+    if (/\d/.test(password)) score += 1;
+    if (/[@$!%*?&]/.test(password)) score += 1;
+    return score;
+  };
+
+  const getStrengthColor = (score: number) => {
+    if (score === 0) return 'bg-gray-200 dark:bg-gray-800';
+    if (score === 1) return 'bg-red-500';
+    if (score === 2) return 'bg-orange-500';
+    if (score === 3) return 'bg-yellow-500';
+    return 'bg-emerald-500';
+  };
+  
+  const getStrengthLabel = (score: number) => {
+    if (score === 0) return 'Sangat Lemah';
+    if (score === 1) return 'Lemah';
+    if (score === 2) return 'Sedang';
+    if (score === 3) return 'Kuat';
+    return 'Sangat Kuat';
+  };
+
   const submitAuth = async () => {
     setLoginError('');
     if (!loginEmail || !loginPassword) {
@@ -1437,9 +1463,24 @@ export default function App() {
                                 </button>
                             </div>
                             {loginMode === 'register' && (
-                                <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400 ml-1 leading-relaxed">
-                                    Min. 8 karakter, mencakup huruf besar & kecil, angka, dan simbol khusus (@$!%*?&).
-                                </p>
+                                <div className="mt-4 space-y-2 animate-in fade-in duration-300">
+                                    <div className="flex gap-1 h-1.5 w-full">
+                                        {[1, 2, 3, 4].map((step) => (
+                                            <div 
+                                                key={step} 
+                                                className={`h-full flex-1 rounded-full transition-colors duration-300 ${getPasswordStrength(loginPassword) >= step ? getStrengthColor(getPasswordStrength(loginPassword)) : 'bg-gray-200 dark:bg-gray-800'}`}
+                                            ></div>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1">
+                                       <span className={`text-[10px] sm:text-xs font-semibold ${getPasswordStrength(loginPassword) === 4 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                                          Kekuatan: {getStrengthLabel(getPasswordStrength(loginPassword))}
+                                       </span>
+                                       <span className="text-[10px] text-gray-400 max-w-[200px] text-right">
+                                          Huruf besar, kecil, angka & simbol.
+                                       </span>
+                                    </div>
+                                </div>
                             )}
                         </div>
                         {loginMode === 'register' && (
