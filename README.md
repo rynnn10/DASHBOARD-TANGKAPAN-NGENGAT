@@ -21,24 +21,27 @@ Dashboard interaktif real-time untuk memantau data tangkapan ngengat (dan hama l
 
 ## 👦 Pembuat (Author)
 
-Proyek ini dibangun oleh **[Nama Anda / Tim Anda]**. 
-*(Anda dapat mengganti ini dengan identitas pembuat aslinya di GitHub)*
+Proyek ini dibangun oleh **RIYAN**.
+_(Anda dapat mengganti ini dengan identitas pembuat aslinya di GitHub)_
 
 ## 📦 Cara Menjalankan Secara Lokal (Local Environment)
 
 Pastikan Anda memiliki [Node.js](https://nodejs.org/) yang telah terinstall.
 
 1. **Clone Repository ini**
+
    ```bash
    git clone https://github.com/username-anda/DASHBOARD-TANGKAPAN-NGENGAT.git
    cd DASHBOARD-TANGKAPAN-NGENGAT
    ```
 
 2. **Install Dependensi**
+
    ```bash
    npm install
    ```
-   *(Jika npm install gagal, coba pastikan struktur json Anda valid atau gunakan `npm install --force`)*
+
+   _(Jika npm install gagal, coba pastikan struktur json Anda valid atau gunakan `npm install --force`)_
 
 3. **Jalankan Development Server**
    ```bash
@@ -52,17 +55,20 @@ Jika Anda ingin deploy khusus build statis ini menggunakan GitHub Pages:
 
 1. **Atur "homepage" di package.json**
    Tambahkan baris berikut di `package.json` Anda:
+
    ```json
    "homepage": "https://<username-github>.github.io/<nama-repo>/"
    ```
 
 2. **Install gh-pages**
+
    ```bash
    npm install --save-dev gh-pages
    ```
 
 3. **Tambahkan Script Deploy di package.json**
    Pada bagian `"scripts"`, tambahkan baris ini:
+
    ```json
    "predeploy": "npm run build",
    "deploy": "gh-pages -d dist"
@@ -72,7 +78,7 @@ Jika Anda ingin deploy khusus build statis ini menggunakan GitHub Pages:
    ```bash
    npm run deploy
    ```
-   *Dashboard Anda sekarang akan online dan bisa diakses lewat link publik GitHub Pages Anda!*
+   _Dashboard Anda sekarang akan online dan bisa diakses lewat link publik GitHub Pages Anda!_
 
 ---
 
