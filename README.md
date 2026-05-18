@@ -22,7 +22,6 @@ Dashboard interaktif real-time untuk memantau data tangkapan ngengat (dan hama l
 ## 👦 Pembuat (Author)
 
 Proyek ini dibangun oleh **RIYAN**.
-_(Anda dapat mengganti ini dengan identitas pembuat aslinya di GitHub)_
 
 ## 📦 Cara Menjalankan Secara Lokal (Local Environment)
 
