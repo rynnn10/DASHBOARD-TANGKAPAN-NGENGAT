@@ -938,7 +938,7 @@ export default function App() {
                   </button>
                   <h2 className="text-base sm:text-lg md:text-xl font-semibold text-gray-800 dark:text-white truncate flex items-center gap-2">
                      Ringkasan Pengamatan
-                     <span className={cn("text-[10px] sm:text-xs px-2 py-0.5 rounded-full border hidden sm:inline-block", isDemoMode ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800" : "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800")}>
+                     <span className={cn("text-[10px] sm:text-xs px-2 py-0.5 rounded-full border inline-block", isDemoMode ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800" : "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800")}>
                          {isDemoMode ? 'Mode Demo' : 'Mode Asli'}
                      </span>
                   </h2>
@@ -1106,16 +1106,16 @@ export default function App() {
             </div>
 
             {isDemoMode && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6">
+                <div className="flex flex-col gap-4 lg:gap-6 mb-6">
                     {/* Arrival Chart */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm relative overflow-hidden group">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
                        <Bug className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-12 transition-transform duration-[2s] group-hover:scale-110 group-hover:-rotate-12 z-0 pointer-events-none" />
-                       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
                            <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                                <PieChart className="w-5 h-5 text-emerald-500" />
                                Fluktuasi Waktu Kedatangan
                            </h3>
-                           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                                {isDemoMode && (
                                    <select
                                        value={timeDuration}
@@ -1198,12 +1198,12 @@ export default function App() {
                     {/* Comparison Chart */}
                     <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
                        <Microscope className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-[-15deg] transition-transform duration-[2s] group-hover:scale-110 group-hover:-translate-x-[40%] z-0 pointer-events-none" />
-                       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
                            <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                                <Bug className="w-5 h-5 text-emerald-500" />
                                Perbandingan Efektivitas
                            </h3>
-                           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                                {isDemoMode && (
                                    <select
                                        value={effectTimeDuration}
