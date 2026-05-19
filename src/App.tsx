@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Leaf, X, PieChart, List, Settings, Menu, Clock, Settings as SettingsIcon, Bug, Wifi, Battery, BatteryMedium, Lightbulb, RotateCcw, Microscope, SatelliteDish, CheckCircle2, Edit2, Camera, Save, Image as ImageIcon, Download, Database, Loader2, Copy, LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { clsx } from 'clsx';
 import type { ClassValue } from 'clsx';
@@ -342,6 +343,8 @@ export default function App() {
     : { uv395: 0, online: false, battery: 0, voltage: 0, led: false }
   );
   const [logs, setLogs] = useState<any[]>([]);
+  const [logCurrentPage, setLogCurrentPage] = useState(1);
+  const logsPerPage = 10;
 
   // Logs Filter State
   const [filterSource, setFilterSource] = useState('all');
@@ -373,6 +376,17 @@ export default function App() {
           return true;
       });
   }, [logs, filterSource, filterStartDate, filterEndDate]);
+
+  // Reset page to 1 when filters change
+  useEffect(() => {
+      setLogCurrentPage(1);
+  }, [filterSource, filterStartDate, filterEndDate]);
+
+  const totalLogPages = Math.ceil(filteredLogs.length / logsPerPage);
+  const paginatedLogs = filteredLogs.slice(
+      (logCurrentPage - 1) * logsPerPage,
+      logCurrentPage * logsPerPage
+  );
 
   // Chart Data
   const [chartData, setChartData] = useState<any[]>([]);
@@ -453,6 +467,7 @@ export default function App() {
   // Effect Chart Time Range State
   const [effectTimeRange, setEffectTimeRange] = useState<'hari' | 'minggu' | 'bulan' | 'tahun'>('hari');
   const [effectTimeDuration, setEffectTimeDuration] = useState<string>('hari_ini');
+  const [effectViewMode, setEffectViewMode] = useState<'total' | 'rata-rata'>('total');
   const [effectChartData, setEffectChartData] = useState<{NodeA: number, NodeB: number}>({NodeA: 0, NodeB: 0});
 
 
@@ -466,12 +481,15 @@ export default function App() {
     }
 
     let now = Date.now();
+    const mockNodeAStatus = { online: true, battery: 85, voltage: 13.6, led: true };
+    const mockNodeBStatus = { online: true, battery: 62, voltage: 13.1, led: true };
+    
     const initialLogs = [
-      { id: 1, timestamp: now - 30000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)' },
-      { id: 2, timestamp: now - 150000, source: 'Node B (UV 395 nm)', action: 'IR Terpicu (+1)' },
-      { id: 3, timestamp: now - 450000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)' },
-      { id: 4, timestamp: now - 900000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)' },
-      { id: 5, timestamp: now - 1200000, source: 'Node B (UV 395 nm)', action: 'IR Terpicu (+1)' }
+      { id: 1, timestamp: now - 30000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus },
+      { id: 2, timestamp: now - 150000, source: 'Node B (UV 395 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus },
+      { id: 3, timestamp: now - 450000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus },
+      { id: 4, timestamp: now - 900000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus },
+      { id: 5, timestamp: now - 1200000, source: 'Node B (UV 395 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus }
     ];
     setLogs(initialLogs);
     setNodeA({ uv365: 142, online: true, battery: 85, voltage: 13.6, led: true });
@@ -548,9 +566,11 @@ export default function App() {
     
     let sumA = 0;
     let sumB = 0;
+    let countData = 1;
     
     if (effectTimeRange === 'hari') {
         const count = effectTimeDuration === 'hari_ini' ? 1 : effectTimeDuration === '3_hari' ? 3 : 7;
+        countData = count;
         if (effectTimeDuration === 'hari_ini') {
             sumA = 142; // Fallbacks
             sumB = 98;
@@ -560,6 +580,7 @@ export default function App() {
         }
     } else if (effectTimeRange === 'minggu') {
         const count = effectTimeDuration === 'minggu_ini' ? 1 : effectTimeDuration === '4_minggu' ? 4 : 7;
+        countData = count;
         if (effectTimeDuration === 'minggu_ini') {
             sumA = [120, 150, 100, 180, 142, 130, 160].reduce((a, b) => a + b, 0);
             sumB = [80, 95, 70, 110, 98, 85, 105].reduce((a, b) => a + b, 0);
@@ -569,6 +590,7 @@ export default function App() {
         }
     } else if (effectTimeRange === 'bulan') {
         const count = effectTimeDuration === 'bulan_ini' ? 1 : effectTimeDuration === '3_bulan' ? 3 : 6;
+        countData = count;
         if (effectTimeDuration === 'bulan_ini') {
             sumA = [500, 600, 550, 620].reduce((a, b) => a + b, 0);
             sumB = [350, 400, 380, 450].reduce((a, b) => a + b, 0);
@@ -578,6 +600,7 @@ export default function App() {
         }
     } else if (effectTimeRange === 'tahun') {
         const count = effectTimeDuration === 'tahun_ini' ? 1 : effectTimeDuration === '2_tahun' ? 2 : 5;
+        countData = count;
         if (effectTimeDuration === 'tahun_ini') {
             sumA = [1000, 1200, 1500, 2000, 2500, 3000, 2800, 2000, 1800, 1500, 1200, 1100].reduce((a, b) => a + b, 0);
             sumB = [800, 900, 1100, 1400, 1800, 2200, 2000, 1500, 1300, 1100, 900, 850].reduce((a, b) => a + b, 0);
@@ -587,8 +610,13 @@ export default function App() {
         }
     }
     
+    if (effectViewMode === 'rata-rata') {
+        sumA = Math.round(sumA / countData);
+        sumB = Math.round(sumB / countData);
+    }
+    
     setEffectChartData({NodeA: sumA, NodeB: sumB});
-  }, [isDemoMode, userProfile, effectTimeRange, effectTimeDuration]);
+  }, [isDemoMode, userProfile, effectTimeRange, effectTimeDuration, effectViewMode]);
 
   const generateLogsSync = () => {
       const sources = ['Node A (UV 365 nm)', 'Node B (UV 395 nm)'];
@@ -600,6 +628,8 @@ export default function App() {
         timestamp: Date.now(),
         source: source,
         action: 'IR Terpicu (+1)',
+        nodeAStatus: { online: nodeA.online, battery: nodeA.battery, voltage: nodeA.voltage, led: nodeA.led },
+        nodeBStatus: { online: nodeB.online, battery: nodeB.battery, voltage: nodeB.voltage, led: nodeB.led }
       };
       
       setLogs(prev => [newLog, ...prev].slice(0, 15));
@@ -760,10 +790,24 @@ export default function App() {
       const wb = XLSX.utils.book_new();
 
       // Sheet 1: Logs
+      const vUnit = userProfile?.voltageUnit === 'mV' ? 'mV' : 'V';
       const logData = logs.map(log => ({
-        'Waktu': new Date(log.timestamp).toLocaleString('id-ID'),
+        'ID Log': log.id,
+        'Waktu (Lengkap)': new Date(log.timestamp).toLocaleString('id-ID', {
+          year: 'numeric', month: 'long', day: 'numeric',
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        }),
+        'Waktu UNIX': log.timestamp,
         'Sumber Node': log.source,
-        'Aksi Deteksi': log.action || 'IR Terpicu (+1)'
+        'Aksi Deteksi': log.action || 'IR Terpicu (+1)',
+        'Node A Online': log.nodeAStatus?.online ? 'Ya' : 'Tidak',
+        'Node A Baterai (%)': log.nodeAStatus?.battery || 0,
+        [`Node A Tegangan (${vUnit})`]: log.nodeAStatus ? (userProfile?.voltageUnit === 'mV' ? log.nodeAStatus.voltage * 1000 : log.nodeAStatus.voltage) : 0,
+        'Node A LED': log.nodeAStatus?.led ? 'Nyala' : 'Mati',
+        'Node B Online': log.nodeBStatus?.online ? 'Ya' : 'Tidak',
+        'Node B Baterai (%)': log.nodeBStatus?.battery || 0,
+        [`Node B Tegangan (${vUnit})`]: log.nodeBStatus ? (userProfile?.voltageUnit === 'mV' ? log.nodeBStatus.voltage * 1000 : log.nodeBStatus.voltage) : 0,
+        'Node B LED': log.nodeBStatus?.led ? 'Nyala' : 'Mati'
       }));
       const wsLogs = XLSX.utils.json_to_sheet(logData);
       XLSX.utils.book_append_sheet(wb, wsLogs, "Log Deteksi");
@@ -778,7 +822,6 @@ export default function App() {
       XLSX.utils.book_append_sheet(wb, wsChart, "Grafik Tangkapan");
 
       // Sheet 3: Sensor Status
-      const vUnit = userProfile?.voltageUnit === 'mV' ? 'mV' : 'V';
       const nodesData = [
         {
           'Nama Node': 'Node A (UV 365nm)',
@@ -820,6 +863,9 @@ export default function App() {
       
       {/* Decorative Blur Backgrounds */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] dark:opacity-[0.02]">
+           <Bug className="w-[80vw] h-[80vw] text-emerald-900 dark:text-emerald-100 -rotate-12" />
+        </div>
         <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-emerald-400/10 dark:bg-emerald-900/20 blur-[120px] mix-blend-multiply dark:mix-blend-lighten" />
         <div className="absolute top-[40%] -right-[10%] w-[40%] h-[60%] rounded-full bg-teal-400/10 dark:bg-teal-900/20 blur-[100px] mix-blend-multiply dark:mix-blend-lighten" />
         <div className="absolute -bottom-[20%] left-[20%] w-[60%] h-[50%] rounded-full bg-blue-400/10 dark:bg-blue-900/20 blur-[120px] mix-blend-multiply dark:mix-blend-lighten" />
@@ -931,8 +977,9 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6 mb-6">
                 
                 {/* Node A */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-purple-500 shadow-sm">
-                   <div className="flex justify-between items-start">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-purple-500 shadow-sm relative overflow-hidden group">
+                   <Bug className="absolute -bottom-4 -right-2 w-24 h-24 text-purple-100 dark:text-purple-900/20 rotate-12 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-12 z-0" />
+                   <div className="relative z-10 flex justify-between items-start">
                        <div>
                           <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-1">Total Tangkapan Sensor</p>
                           <h3 className="text-2xl font-bold text-gray-800 dark:text-white">Node A <span className="text-purple-600 dark:text-purple-400 text-sm">(365 nm)</span></h3>
@@ -941,7 +988,7 @@ export default function App() {
                            {isDemoMode && (
                                <button 
                                    onClick={() => setNodeA(prev => ({...prev, uv365: Math.max(0, prev.uv365 - 1)}))}
-                                   className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95"
+                                   className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
                                    title="Kurangi tangkapan (-1)"
                                >
                                   <Bug className="w-6 h-6"/>
@@ -950,7 +997,7 @@ export default function App() {
                            <button 
                                onClick={() => isDemoMode && setNodeA(prev => ({...prev, uv365: prev.uv365 + 1}))}
                                className={cn(
-                                   "w-12 h-12 rounded-full flex items-center justify-center text-purple-600 dark:text-purple-400 transition-transform",
+                                   "w-12 h-12 rounded-full flex items-center justify-center text-purple-600 dark:text-purple-400 transition-transform shadow-sm",
                                    isDemoMode ? "bg-purple-200 dark:bg-purple-900/60 cursor-pointer hover:scale-110 active:scale-95" : "bg-purple-100 dark:bg-purple-900/40"
                                )}
                                title={isDemoMode ? "Tambah tangkapan (+1)" : ""}
@@ -959,15 +1006,16 @@ export default function App() {
                            </button>
                        </div>
                    </div>
-                   <div className="mt-4 flex items-end gap-2">
+                   <div className="relative z-10 mt-4 flex items-end gap-2">
                        <span className="text-4xl font-bold text-gray-900 dark:text-white transition-all duration-300">{nodeA.uv365}</span>
                        <span className="text-sm text-gray-500 dark:text-gray-400 mb-1">ngengat</span>
                    </div>
                 </div>
 
                 {/* Node B */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-blue-500 shadow-sm">
-                   <div className="flex justify-between items-start">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-blue-500 shadow-sm relative overflow-hidden group">
+                   <Bug className="absolute -bottom-4 -right-2 w-24 h-24 text-blue-100 dark:text-blue-900/20 rotate-12 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-12 z-0" />
+                   <div className="relative z-10 flex justify-between items-start">
                        <div>
                           <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-1">Total Tangkapan Sensor</p>
                           <h3 className="text-2xl font-bold text-gray-800 dark:text-white">Node B <span className="text-blue-600 dark:text-blue-400 text-sm">(395 nm)</span></h3>
@@ -976,7 +1024,7 @@ export default function App() {
                            {isDemoMode && (
                                <button 
                                    onClick={() => setNodeB(prev => ({...prev, uv395: Math.max(0, prev.uv395 - 1)}))}
-                                   className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95"
+                                   className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
                                    title="Kurangi tangkapan (-1)"
                                >
                                   <Bug className="w-6 h-6"/>
@@ -985,7 +1033,7 @@ export default function App() {
                            <button 
                                onClick={() => isDemoMode && setNodeB(prev => ({...prev, uv395: prev.uv395 + 1}))}
                                className={cn(
-                                   "w-12 h-12 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-transform",
+                                   "w-12 h-12 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-transform shadow-sm",
                                    isDemoMode ? "bg-blue-200 dark:bg-blue-900/60 cursor-pointer hover:scale-110 active:scale-95" : "bg-blue-100 dark:bg-blue-900/40"
                                )}
                                title={isDemoMode ? "Tambah tangkapan (+1)" : ""}
@@ -994,21 +1042,22 @@ export default function App() {
                            </button>
                        </div>
                    </div>
-                   <div className="mt-4 flex items-end gap-2">
+                   <div className="relative z-10 mt-4 flex items-end gap-2">
                        <span className="text-4xl font-bold text-gray-900 dark:text-white transition-all duration-300">{nodeB.uv395}</span>
                        <span className="text-sm text-gray-500 dark:text-gray-400 mb-1">ngengat</span>
                    </div>
                 </div>
 
                 {/* Node A Status */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm">
-                   <div className="flex justify-between items-center mb-4">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
+                   <SatelliteDish className="absolute -bottom-4 right-0 w-24 h-24 text-gray-100 dark:text-gray-700/30 rotate-[-15deg] transition-transform duration-500 group-hover:scale-110 group-hover:-translate-x-2 z-0" />
+                   <div className="relative z-10 flex justify-between items-center mb-4">
                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Status Node A (365nm)</h3>
                        <span className={cn("px-2 py-1 text-xs font-bold rounded-full border flex items-center gap-1", nodeA.online ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800" : "bg-gray-100 text-gray-500")}>
                            <Wifi className="w-3 h-3"/> {nodeA.online ? 'Online' : 'Offline'}
                        </span>
                    </div>
-                   <div className="space-y-3">
+                   <div className="relative z-10 space-y-3">
                        <div>
                            <div className="flex justify-between text-xs mb-1">
                                <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1"><Battery className="w-3 h-3"/> Baterai</span>
@@ -1028,14 +1077,15 @@ export default function App() {
                 </div>
 
                 {/* Node B Status */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm">
-                   <div className="flex justify-between items-center mb-4">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
+                   <SatelliteDish className="absolute -bottom-4 right-0 w-24 h-24 text-gray-100 dark:text-gray-700/30 rotate-[-15deg] transition-transform duration-500 group-hover:scale-110 group-hover:-translate-x-2 z-0" />
+                   <div className="relative z-10 flex justify-between items-center mb-4">
                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Status Node B (395nm)</h3>
                        <span className={cn("px-2 py-1 text-xs font-bold rounded-full border flex items-center gap-1", nodeB.online ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800" : "bg-gray-100 text-gray-500")}>
                            <Wifi className="w-3 h-3"/> {nodeB.online ? 'Online' : 'Offline'}
                        </span>
                    </div>
-                   <div className="space-y-3">
+                   <div className="relative z-10 space-y-3">
                        <div>
                            <div className="flex justify-between text-xs mb-1">
                                <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1"><BatteryMedium className="w-3 h-3"/> Baterai</span>
@@ -1058,9 +1108,13 @@ export default function App() {
             {isDemoMode && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6">
                     {/* Arrival Chart */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm">
-                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                           <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white">Fluktuasi Waktu Kedatangan</h3>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm relative overflow-hidden group">
+                       <Bug className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-12 transition-transform duration-[2s] group-hover:scale-110 group-hover:-rotate-12 z-0 pointer-events-none" />
+                       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                           <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                               <PieChart className="w-5 h-5 text-emerald-500" />
+                               Fluktuasi Waktu Kedatangan
+                           </h3>
                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                {isDemoMode && (
                                    <select
@@ -1112,7 +1166,18 @@ export default function App() {
                        <div className="relative w-full h-64 md:h-72 min-h-[200px]">
                           {isDataLoading ? (
                              <div className="w-full h-full flex flex-col gap-4">
-                                <div className="h-full w-full bg-gray-100 dark:bg-gray-700/50 rounded-lg animate-pulse backdrop-blur-sm"></div>
+                                <div className="h-full w-full bg-gray-100 dark:bg-gray-700/50 rounded-lg animate-pulse backdrop-blur-sm relative overflow-hidden">
+                                   <div className="absolute top-1/2 left-0 w-full border-t-2 border-dashed border-gray-300 dark:border-gray-600 top-1/2 -mt-4 opacity-50"></div>
+                                   <div className="absolute top-0 bottom-0 left-[20%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
+                                   <div className="absolute top-0 bottom-0 left-[50%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
+                                   <div className="absolute top-0 bottom-0 left-[80%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
+                                </div>
+                             </div>
+                          ) : chartData.length === 0 ? (
+                             <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+                                <Leaf className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
+                                <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">Belum ada data tangkapan ngengat</p>
+                                <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">Data akan muncul di sini setelah sensor mulai mendeteksi.</p>
                              </div>
                           ) : (
                           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
@@ -1131,9 +1196,13 @@ export default function App() {
                     </div>
 
                     {/* Comparison Chart */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm">
-                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                           <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white">Perbandingan Efektivitas</h3>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
+                       <Microscope className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-[-15deg] transition-transform duration-[2s] group-hover:scale-110 group-hover:-translate-x-[40%] z-0 pointer-events-none" />
+                       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                           <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                               <Bug className="w-5 h-5 text-emerald-500" />
+                               Perbandingan Efektivitas
+                           </h3>
                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                {isDemoMode && (
                                    <select
@@ -1164,6 +1233,20 @@ export default function App() {
                                    </select>
                                )}
                                <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
+                                   {(['total', 'rata-rata'] as const).map(m => (
+                                       <button 
+                                           key={m}
+                                           onClick={() => setEffectViewMode(m)}
+                                           className={cn(
+                                               "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                                               effectViewMode === m ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800" : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                                           )}
+                                       >
+                                           {m}
+                                       </button>
+                                   ))}
+                               </div>
+                               <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
                                    {(['hari', 'minggu', 'bulan', 'tahun'] as const).map(t => (
                                        <button 
                                            key={t}
@@ -1184,14 +1267,21 @@ export default function App() {
                        </div>
                        <div className="relative w-full h-64 md:h-72 min-h-[200px]">
                           {isDataLoading ? (
-                             <div className="w-full h-full flex items-end justify-center gap-8 pb-8 pt-4">
-                                <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm" style={{ height: '70%' }}></div>
-                                <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm" style={{ height: '45%' }}></div>
+                             <div className="w-full h-full flex items-end justify-center gap-8 pb-8 pt-4 relative overflow-hidden">
+                                <div className="absolute top-1/2 left-0 w-full border-t-2 border-dashed border-gray-300 dark:border-gray-600 top-1/2 -mt-4 opacity-50 z-0"></div>
+                                <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm z-10" style={{ height: '70%' }}></div>
+                                <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm z-10" style={{ height: '45%' }}></div>
+                             </div>
+                          ) : (isDemoMode ? effectChartData.NodeA === 0 && effectChartData.NodeB === 0 : nodeA.uv365 === 0 && nodeB.uv395 === 0) ? (
+                             <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+                                <Bug className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
+                                <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">Tidak ada data untuk dibandingkan</p>
+                                <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">Data tangkapan masing-masing node akan dibandingkan di sini.</p>
                              </div>
                           ) : (
                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                               <BarChart data={[{ 
-                                  name: 'Total Tangkapan', 
+                                  name: isDemoMode ? (effectViewMode === 'rata-rata' ? 'Rata-rata Tangkapan' : 'Total Tangkapan') : 'Total Tangkapan', 
                                   NodeA: isDemoMode ? effectChartData.NodeA : nodeA.uv365, 
                                   NodeB: isDemoMode ? effectChartData.NodeB : nodeB.uv395 
                               }]}>
@@ -1211,9 +1301,13 @@ export default function App() {
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6" id="log-section">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm">
-                   <div className="flex justify-between items-center mb-4">
-                       <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white">Log Deteksi Sensor (Real-time)</h3>
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm relative overflow-hidden">
+                   <List className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-[5deg] z-0 pointer-events-none" />
+                   <div className="relative z-10 flex justify-between items-center mb-4">
+                       <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                           <Bug className="w-5 h-5 text-emerald-500" />
+                           Log Deteksi Sensor (Real-time)
+                       </h3>
                        <div className="flex gap-2 items-center">
                            <button onClick={handleDownloadExcel} className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 transition-colors text-sm font-semibold" title="Unduh Database Lengkap (Excel)">
                               <Download className="w-4 h-4"/>
@@ -1273,14 +1367,14 @@ export default function App() {
                                            <td className="px-4 py-3"><div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-20"></div></td>
                                        </tr>
                                    ))
-                               ) : filteredLogs.length === 0 ? (
+                               ) : paginatedLogs.length === 0 ? (
                                    <tr>
                                        <td colSpan={3} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
                                            <SatelliteDish className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
                                            {logs.length === 0 ? "Menunggu koneksi dan data masuk..." : "Tidak ada log yang sesuai dengan filter."}
                                        </td>
                                    </tr>
-                               ) : filteredLogs.map((log) => (
+                               ) : paginatedLogs.map((log) => (
                                    <tr 
                                        key={log.id} 
                                        className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition cursor-help relative group"
@@ -1297,6 +1391,34 @@ export default function App() {
                            </tbody>
                        </table>
                    </div>
+                   
+                   {/* Pagination Controls */}
+                   {totalLogPages > 1 && (
+                       <div className="flex items-center justify-between mt-4">
+                           <span className="text-sm text-gray-500 dark:text-gray-400">
+                               Menampilkan {(logCurrentPage - 1) * logsPerPage + 1} - {Math.min(logCurrentPage * logsPerPage, filteredLogs.length)} dari {filteredLogs.length} data
+                           </span>
+                           <div className="flex gap-1">
+                               <button 
+                                   onClick={() => setLogCurrentPage(p => Math.max(1, p - 1))}
+                                   disabled={logCurrentPage === 1}
+                                   className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300 rounded disabled:opacity-50 transition-colors"
+                               >
+                                   Mundur
+                               </button>
+                               <div className="px-3 py-1 text-sm bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded font-semibold border border-emerald-100 dark:border-emerald-800">
+                                   {logCurrentPage} / {totalLogPages}
+                               </div>
+                               <button 
+                                   onClick={() => setLogCurrentPage(p => Math.min(totalLogPages, p + 1))}
+                                   disabled={logCurrentPage === totalLogPages}
+                                   className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300 rounded disabled:opacity-50 transition-colors"
+                               >
+                                   Maju
+                               </button>
+                           </div>
+                       </div>
+                   )}
                 </div>
 
                 {isDemoMode && (
@@ -1399,13 +1521,24 @@ export default function App() {
       )}
 
       {/* Login Modal */}
+      <AnimatePresence>
       {isLoginModalOpen && (
-        <div className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity" onClick={(e) => {
+        <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center" onClick={(e) => {
             if(e.target === e.currentTarget) {
                setLoginModalOpen(false);
             }
         }}>
-            <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden transform transition-all duration-300 ease-out">
+            <motion.div 
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden"
+            >
                 <div className="p-6 sm:p-8">
                     <div className="flex justify-between items-center mb-8">
                         <h3 className="font-extrabold text-2xl text-gray-900 dark:text-white tracking-tight">
@@ -1416,13 +1549,17 @@ export default function App() {
                         </button>
                     </div>
                     {loginSuccess ? (
-                        <div className="py-12 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
+                        <motion.div 
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="py-12 flex flex-col items-center justify-center"
+                        >
                             <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
                                 <CheckCircle2 className="w-10 h-10" />
                             </div>
                             <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Berhasil!</h4>
                             <p className="text-sm text-gray-500 dark:text-gray-400 text-center">Redirecting...</p>
-                        </div>
+                        </motion.div>
                     ) : (
                     <>
                     {loginError && (
@@ -1527,9 +1664,10 @@ export default function App() {
                     </>
                     )}
                 </div>
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* Profile Modal */}
       {isProfileOpen && (
