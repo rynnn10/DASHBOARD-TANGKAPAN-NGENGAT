@@ -1,5 +1,6 @@
 {
   "name": "react-example",
+  "homepage": "https://rynnn10.github.io/DASHBOARD-TANGKAPAN-NGENGAT",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,6 +8,8 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build && node -e \"require('fs').copyFileSync('README.md', 'dist/README.md')\"",
     "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "predeploy": "npm run build",
