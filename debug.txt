@@ -1,0 +1,9 @@
+                           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                               {isDemoMode && (
+                                   <select
+                                       value={effectTimeDuration}
+                                       onChange={(e) => setEffectTimeDuration(e.target.value)}
+                                       className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                                   >
+                                       {effectTimeRange === 'hari' && <>
+                                           <option value="hari_ini">Hari Ini</option>

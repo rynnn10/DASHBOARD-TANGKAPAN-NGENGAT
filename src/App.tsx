@@ -1,4 +1,6 @@
+const safeParseDate = (dateStr: any) => { if (!dateStr) return new Date(); const d = new Date(dateStr); if (isNaN(d.getTime()) && typeof dateStr === 'string') { const parts = dateStr.split(/[Ts]/); const dParts = parts[0].split(/[/-]/); if(dParts.length === 3) { let day=dParts[0], month=dParts[1], year=dParts[2]; if(year.length === 2) { year = dParts[0]; day=dParts[2]; } return new Date(`${year}-${month}-${day}T${parts[1] || '00:00:00'}`); } } return d; };
 import React, { useState, useEffect } from 'react';
+import mqtt from 'mqtt';
 import { Leaf, X, PieChart, List, Settings, Menu, Clock, Settings as SettingsIcon, Bug, Wifi, Battery, BatteryMedium, Lightbulb, RotateCcw, Microscope, SatelliteDish, CheckCircle2, Edit2, Camera, Save, Image as ImageIcon, Download, Database, Loader2, Copy, LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -334,15 +336,30 @@ export default function App() {
   };
 
   // Data States
-  const [nodeA, setNodeA] = useState(() => isDemoMode 
-    ? { uv365: 142, online: true, battery: 85, voltage: 13.6, led: true }
-    : { uv365: 0, online: false, battery: 0, voltage: 0, led: false }
-  );
-  const [nodeB, setNodeB] = useState(() => isDemoMode 
-    ? { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true }
-    : { uv395: 0, online: false, battery: 0, voltage: 0, led: false }
-  );
-  const [logs, setLogs] = useState<any[]>([]);
+  const [nodeA, setNodeA] = useState(() => {
+    if (isDemoMode) return { uv365: 142, online: true, battery: 85, voltage: 13.6, led: true };
+    try {
+      const saved = localStorage.getItem('nodeA_asli');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return { uv365: 0, online: false, battery: 0, voltage: 0, led: false };
+  });
+  const [nodeB, setNodeB] = useState(() => {
+    if (isDemoMode) return { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true };
+    try {
+      const saved = localStorage.getItem('nodeB_asli');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return { uv395: 0, online: false, battery: 0, voltage: 0, led: false };
+  });
+  const [logs, setLogs] = useState<any[]>(() => {
+    if (isDemoMode) return [];
+    try {
+      const saved = localStorage.getItem('logs_asli');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return [];
+  });
   const [logCurrentPage, setLogCurrentPage] = useState(1);
   const logsPerPage = 10;
 
@@ -354,10 +371,11 @@ export default function App() {
   const filteredLogs = React.useMemo(() => {
       return logs.filter(log => {
           // Source filter
-          if (filterSource !== 'all' && log.source !== filterSource) return false;
+          const sourceStr = log.source || log.node;
+          if (filterSource !== 'all' && sourceStr !== filterSource) return false;
           
           // Date range filter
-          const logDate = new Date(log.timestamp);
+          const logDate = safeParseDate(log.timestamp || log.id);
           // Set to beginning of the day for accurate comparison
           logDate.setHours(0, 0, 0, 0);
 
@@ -396,6 +414,88 @@ export default function App() {
   const [manual395, setManual395] = useState('');
   const [evaluation, setEvaluation] = useState<{ err365: number, err395: number } | null>(null);
   
+  const [espTargetNode, setEspTargetNode] = useState<'A' | 'B'>(() => {
+    return (localStorage.getItem('espTargetNode') as 'A' | 'B') || 'A';
+  });
+  const espTargetNodeRef = React.useRef(espTargetNode);
+  useEffect(() => {
+    espTargetNodeRef.current = espTargetNode;
+  }, [espTargetNode]);
+
+  const fetchDataFromGoogleSheets = async (silent = false) => {
+     if (!SCRIPT_URL || isDemoMode) {
+         if (isDemoMode && !silent) alert("Anda sedang di Mode Demo. Penarikan data (fetch) hanya berlaku untuk Mode Asli.");
+         return;
+     }
+     if (!silent) setIsSyncingSheet(true);
+     try {
+       const res = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'fetchData', isDemoMode: false, email: userProfile?.email })
+       });
+       const result = await res.json();
+       if (result.status === 'success' && result.data) {
+           if (result.data.nodeA) setNodeA(result.data.nodeA);
+           if (result.data.nodeB) setNodeB(result.data.nodeB);
+           if (result.data.logs) setLogs(result.data.logs);
+           if (!silent) alert("Data berhasil ditarik dari Google Sheets!");
+       } else if (!silent && result.message && result.message.includes("No valid action")) {
+           alert("GAGAL: Anda perlu menambahkan blok if (data.action === 'fetchData') di code.gs Google Apps Script Anda untuk melayani penarikan data.");
+       } else {
+           if (!silent) alert("Gagal menarik data: " + (result.message || "Pastikan script backend mendukung 'fetchData'"));
+       }
+     } catch (err) {
+       if (!silent) alert("Error menarik data. Pastikan Google Apps Script mendukung action: 'fetchData'. " + err);
+     } finally {
+       if (!silent) setIsSyncingSheet(false);
+     }
+  };
+
+  // Auto fetch on boot for Mode Asli
+  useEffect(() => {
+    if (!isDemoMode && userProfile) {
+       fetchDataFromGoogleSheets(true);
+    }
+  }, [isDemoMode, userProfile]);
+
+  const resetTangkapan = async (node: 'A' | 'B', resetDatabase: boolean) => {
+    const confirmationMsg = resetDatabase 
+       ? `Yakin ingin mereset total tangkapan dan log di Node ${node} SECARA LOKAL DAN DI DATABASE GOOGLE SHEETS?`
+       : `Yakin ingin mereset total tangkapan dan log di Node ${node} HANYA di perangkat ini (Web Lokal)?`;
+       
+    if (window.confirm(confirmationMsg)) {
+      const nextA = node === 'A' ? { ...nodeA, uv365: 0 } : nodeA;
+      const nextB = node === 'B' ? { ...nodeB, uv395: 0 } : nodeB;
+      const nextLogs = logs.filter(log => !(log.source || log.node).includes(node));
+      
+      setNodeA(nextA);
+      setNodeB(nextB);
+      setLogs(nextLogs);
+      
+      if (resetDatabase && SCRIPT_URL && !isDemoMode) {
+          try {
+              await fetch(SCRIPT_URL, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                 body: JSON.stringify({
+                    action: 'syncData',
+                    logs: nextLogs,
+                    nodeA: nextA,
+                    nodeB: nextB,
+                    chartData: dataRef.current.chartData, 
+                    email: userProfile?.email,
+                    isDemoMode: isDemoMode
+                 })
+              });
+              alert('Data berhasil di-reset dan disinkronkan ke Database.');
+          } catch(err) {
+              alert('Gagal mensinkronisasi reset ke database. ' + err);
+          }
+      }
+    }
+  };
+
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const prevOnlineRef = React.useRef({ A: isDemoMode ? true : false, B: isDemoMode ? true : false });
 
@@ -436,6 +536,132 @@ export default function App() {
     prevOnlineRef.current = { A: nodeA.online, B: nodeB.online };
   }, [nodeA.online, nodeB.online]);
 
+  // --- KONEKSI MQTT (Mode Asli) ---
+  useEffect(() => {
+    if (isDemoMode) return;
+
+    // Koneksi ke public broker (karena berjalan di web/browser harus via WSS/WebSockets)
+    const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+      clientId: `dashboard_web_${Math.random().toString(16).slice(3)}`,
+      keepalive: 60,
+      protocolId: 'MQTT',
+      protocolVersion: 4,
+      clean: true,
+      reconnectPeriod: 5000, 
+    });
+
+    mqttClient.on('connect', () => {
+      console.log('Terhubung ke MQTT Broker!');
+      // Subscribe ke topik yang digunakan oleh ESP8266
+      mqttClient.subscribe('dashboard/ngengat/deteksi');
+      mqttClient.subscribe('dashboard/ngengat/baterai');
+      
+      // Update status menjadi online saat broker terhubung
+      setNodeA(prev => ({ ...prev, online: true }));
+      // Asumsi nodeB off jika hanya ada 1 esp8266
+    });
+
+    mqttClient.on('error', (err: any) => {
+      // Abaikan error "client disconnecting" yang muncul akibat React Strict Mode me-restart useEffect dengan cepat
+      if (err && err.message && err.message.includes('client disconnecting')) {
+         return;
+      }
+      console.error('Koneksi MQTT error:', err);
+    });
+
+    mqttClient.on('message', (topic, message) => {
+      const payloadStr = message.toString();
+      console.log(`Pesan MQTT masuk [${topic}]:`, payloadStr);
+      
+      try {
+        const data = JSON.parse(payloadStr);
+
+        if (topic === 'dashboard/ngengat/deteksi') {
+          // Arahkan tangkapan sesuai settingan target node saat ini
+          const target = espTargetNodeRef.current;
+          if (target === 'A') {
+             setNodeA(prev => ({ ...prev, uv365: prev.uv365 + 1, online: true }));
+             const newLog = {
+               id: Date.now() + Math.random().toString(36).substr(2, 9),
+               timestamp: Date.now(),
+               source: 'Node A (UV 365 nm)',
+               action: 'IR Terpicu (+1)'
+             };
+             setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 100)); // limit 100
+             
+             // Auto push ke DB Asli setelah 2 detik
+             if (SCRIPT_URL) {
+                 setTimeout(() => {
+                     fetch(SCRIPT_URL, {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                       body: JSON.stringify({
+                         action: 'syncData',
+                         logs: dataRef.current.logs,
+                         nodeA: dataRef.current.nodeA,
+                         nodeB: dataRef.current.nodeB,
+                         chartData: dataRef.current.chartData,
+                         isDemoMode: false,
+                         email: userProfile?.email
+                       })
+                     }).catch(() => {});
+                 }, 2000);
+             }
+          } else {
+             setNodeB(prev => ({ ...prev, uv395: prev.uv395 + 1, online: true }));
+             const newLog = {
+               id: Date.now() + Math.random().toString(36).substr(2, 9),
+               timestamp: Date.now(),
+               source: 'Node B (UV 395 nm)',
+               action: 'IR Terpicu (+1)'
+             };
+             setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 100));
+             
+             // Auto push ke DB Asli setelah 2 detik
+             if (SCRIPT_URL) {
+                 setTimeout(() => {
+                     fetch(SCRIPT_URL, {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                       body: JSON.stringify({
+                         action: 'syncData',
+                         logs: dataRef.current.logs,
+                         nodeA: dataRef.current.nodeA,
+                         nodeB: dataRef.current.nodeB,
+                         chartData: dataRef.current.chartData,
+                         isDemoMode: false,
+                         email: userProfile?.email
+                       })
+                     }).catch(() => {});
+                 }, 2000);
+             }
+          }
+        } 
+        else if (topic === 'dashboard/ngengat/baterai') {
+           const target = espTargetNodeRef.current;
+           if (data.voltage) {
+             const updateObj = { 
+               voltage: parseFloat(data.voltage.toFixed(2)), 
+               battery: Math.round(data.percentage),
+               online: true
+             };
+             if (target === 'A') {
+                setNodeA(prev => ({ ...prev, ...updateObj }));
+             } else {
+                setNodeB(prev => ({ ...prev, ...updateObj }));
+             }
+           }
+        }
+      } catch (err) {
+        console.error("Gagal parse pesan MQTT:", err);
+      }
+    });
+
+    return () => {
+      mqttClient.end();
+    };
+  }, [isDemoMode]);
+
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -463,6 +689,7 @@ export default function App() {
   // Chart Time Range State
   const [timeRange, setTimeRange] = useState<'hari' | 'minggu' | 'bulan' | 'tahun'>('hari');
   const [timeDuration, setTimeDuration] = useState<string>('hari_ini');
+  const [chartIntervalAsli, setChartIntervalAsli] = useState<number>(60); // in minutes
 
   // Effect Chart Time Range State
   const [effectTimeRange, setEffectTimeRange] = useState<'hari' | 'minggu' | 'bulan' | 'tahun'>('hari');
@@ -471,14 +698,22 @@ export default function App() {
   const [effectChartData, setEffectChartData] = useState<{NodeA: number, NodeB: number}>({NodeA: 0, NodeB: 0});
 
 
-  // Offline Simulation Initial Data
+  // Mode Asli Storage Sync
   useEffect(() => {
-    if (!isDemoMode || !userProfile) {
-      setLogs([]);
-      setNodeA({ uv365: 0, online: false, battery: 0, voltage: 0, led: false });
-      setNodeB({ uv395: 0, online: false, battery: 0, voltage: 0, led: false });
-      return;
+    if (!isDemoMode && userProfile) {
+      localStorage.setItem('logs_asli', JSON.stringify(logs));
+      localStorage.setItem('nodeA_asli', JSON.stringify(nodeA));
+      localStorage.setItem('nodeB_asli', JSON.stringify(nodeB));
     }
+  }, [logs, nodeA, nodeB, isDemoMode, userProfile]);
+
+  // Offline Simulation & Data Loading Initial Data
+  useEffect(() => {
+    if (!userProfile) return;
+    if (!isDemoMode) return;
+    
+    // We only set demo mock data if in demo mode and logs array is empty
+    if (logs.length > 0) return;
 
     let now = Date.now();
     const mockNodeAStatus = { online: true, battery: 85, voltage: 13.6, led: true };
@@ -498,7 +733,60 @@ export default function App() {
 
   useEffect(() => {
     if (!isDemoMode || !userProfile) {
-      setChartData([]);
+      if (!isDemoMode) {
+        // Mode Asli: Generate simple chart data from local logs history
+        if (logs.length === 0) {
+           // Provide an empty chart state with at least two data points so the grid still renders
+           const currentHour = new Date().getHours();
+           const prevHour = String((currentHour - 1 + 24) % 24).padStart(2, '0');
+           const nowHour = String(currentHour).padStart(2, '0');
+           setChartData([
+               { time: `${prevHour}:00`, NodeA: 0, NodeB: 0 },
+               { time: `${nowHour}:00`, NodeA: 0, NodeB: 0 }
+           ]);
+           return;
+        }
+        const grouped: Record<string, { NodeA: number; NodeB: number }> = {};
+        const chronologicalLogs = [...logs].reverse();
+        
+        for (const log of chronologicalLogs) {
+           const logDate = safeParseDate(log.timestamp || log.id);
+           const hour = logDate.getHours();
+           const minute = logDate.getMinutes();
+           
+           // group to nearest interval
+           const intervalMin = Math.floor(minute / chartIntervalAsli) * chartIntervalAsli;
+           
+           const hourStr = String(hour).padStart(2, '0');
+           const minStr = String(intervalMin).padStart(2, '0');
+           const timeKey = `${hourStr}:${minStr}`;
+           
+           const sourceStr = log.source || log.node || '';
+           if (!grouped[timeKey]) grouped[timeKey] = { NodeA: 0, NodeB: 0 };
+           if (sourceStr.includes('A')) grouped[timeKey].NodeA++;
+           else if (sourceStr.includes('B')) grouped[timeKey].NodeB++;
+        }
+        const newChartData = Object.keys(grouped).map(time => ({
+           time, NodeA: grouped[time].NodeA, NodeB: grouped[time].NodeB
+        }));
+        
+        // Ensure at least 2 points for LineChart to stretch out if only 1 time range has data
+        if (newChartData.length === 1) {
+           const [hourStr, minStr] = newChartData[0].time.split(':');
+           let h = parseInt(hourStr);
+           let m = parseInt(minStr) - chartIntervalAsli;
+           if (m < 0) {
+              m += 60;
+              h = (h - 1 + 24) % 24;
+           }
+           const prevTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+           newChartData.unshift({ time: prevTime, NodeA: 0, NodeB: 0 });
+        }
+        
+        setChartData(newChartData);
+      } else {
+        setChartData([]);
+      }
       return;
     }
     let labels: string[] = [];
@@ -556,11 +844,60 @@ export default function App() {
       time, NodeA: dataA[i], NodeB: dataB[i]
     }));
     setChartData(initialChartData);
-  }, [isDemoMode, userProfile, timeRange, timeDuration]);
+  }, [isDemoMode, userProfile, timeRange, timeDuration, logs, chartIntervalAsli]);
 
   useEffect(() => {
-    if (!isDemoMode || !userProfile) {
+    if (!userProfile) {
       setEffectChartData({NodeA: 0, NodeB: 0});
+      return;
+    }
+    
+    // Fallback for real mode when using purely local storage for "Hari/Minggu" options
+    // In a real app we'd filter the 'logs', but here we can just show total since 
+    // local logs might not go back months/years unless we store them. 
+    // For "total" mode we use the total accumulated nodeA.uv365 / nodeB.uv395.
+    if (!isDemoMode) {
+      // Simplification: In Real mode, just use the sum of active logs for 'hari_ini' 
+      // or total UV counts. To make it simple for the UI, we'll try to filter logs.
+      let sumA = 0;
+      let sumB = 0;
+      let countData = 1;
+      
+      const now = new Date();
+      let threshold = new Date(0); // all time by default
+      if (effectTimeRange === 'hari') {
+          threshold = new Date(now.getTime() - (effectTimeDuration === 'hari_ini' ? 1 : effectTimeDuration === '3_hari' ? 3 : 7) * 24 * 60 * 60 * 1000);
+          countData = effectTimeDuration === 'hari_ini' ? 1 : effectTimeDuration === '3_hari' ? 3 : 7;
+      } else if (effectTimeRange === 'minggu') {
+          threshold = new Date(now.getTime() - (effectTimeDuration === 'minggu_ini' ? 1 : effectTimeDuration === '4_minggu' ? 4 : 7) * 7 * 24 * 60 * 60 * 1000);
+          countData = effectTimeDuration === 'minggu_ini' ? 1 : effectTimeDuration === '4_minggu' ? 4 : 7;
+      } else if (effectTimeRange === 'bulan') {
+          const mths = effectTimeDuration === 'bulan_ini' ? 1 : effectTimeDuration === '3_bulan' ? 3 : 6;
+          threshold = new Date(now.getFullYear(), now.getMonth() - mths, now.getDate());
+          countData = mths;
+      } else {
+          countData = 1; // arbitrary
+      }
+
+      const filtered = logs.filter(l => safeParseDate(l.timestamp || l.id) >= threshold);
+      for (const log of filtered) {
+          if ((log.source || log.node).includes('A')) sumA++;
+          else if ((log.source || log.node).includes('B')) sumB++;
+      }
+      
+      // If no logs match the timeframe but they pick Total, it might look empty.
+      // So if it's "total", we might want to just show the absolute raw node total.
+      if (effectViewMode === 'total' && effectTimeDuration === 'hari_ini') {
+         sumA = Math.max(sumA, nodeA.uv365); // Just fallback so it doesn't look empty when logs are cleared
+         sumB = Math.max(sumB, nodeB.uv395);
+      }
+      
+      if (effectViewMode === 'rata-rata') {
+          sumA = Math.floor(sumA / countData);
+          sumB = Math.floor(sumB / countData);
+      }
+      
+      setEffectChartData({NodeA: sumA, NodeB: sumB});
       return;
     }
     
@@ -793,12 +1130,12 @@ export default function App() {
       const vUnit = userProfile?.voltageUnit === 'mV' ? 'mV' : 'V';
       const logData = logs.map(log => ({
         'ID Log': log.id,
-        'Waktu (Lengkap)': new Date(log.timestamp).toLocaleString('id-ID', {
+        'Waktu (Lengkap)': safeParseDate(log.timestamp || log.id).toLocaleString('id-ID', {
           year: 'numeric', month: 'long', day: 'numeric',
           hour: '2-digit', minute: '2-digit', second: '2-digit'
         }),
-        'Waktu UNIX': log.timestamp,
-        'Sumber Node': log.source,
+        'Waktu UNIX': log.timestamp || log.id,
+        'Sumber Node': log.source || log.node,
         'Aksi Deteksi': log.action || 'IR Terpicu (+1)',
         'Node A Online': log.nodeAStatus?.online ? 'Ya' : 'Tidak',
         'Node A Baterai (%)': log.nodeAStatus?.battery || 0,
@@ -1023,7 +1360,7 @@ export default function App() {
                        <div className="flex items-center gap-2">
                            {isDemoMode && (
                                <button 
-                                   onClick={() => setNodeB(prev => ({...prev, uv395: Math.max(0, prev.uv395 - 1)}))}
+                                    onClick={() => setNodeB(prev => ({...prev, uv395: Math.max(0, prev.uv395 - 1)}))}
                                    className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
                                    title="Kurangi tangkapan (-1)"
                                >
@@ -1105,64 +1442,76 @@ export default function App() {
                 </div>
             </div>
 
-            {isDemoMode && (
-                <div className="flex flex-col gap-4 lg:gap-6 mb-6">
-                    {/* Arrival Chart */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
-                       <Bug className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-12 transition-transform duration-[2s] group-hover:scale-110 group-hover:-rotate-12 z-0 pointer-events-none" />
-                       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                           <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                               <PieChart className="w-5 h-5 text-emerald-500" />
-                               Fluktuasi Waktu Kedatangan
-                           </h3>
-                           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                               {isDemoMode && (
-                                   <select
-                                       value={timeDuration}
-                                       onChange={(e) => setTimeDuration(e.target.value)}
-                                       className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
-                                   >
-                                       {timeRange === 'hari' && <>
-                                           <option value="hari_ini">Hari Ini</option>
-                                           <option value="3_hari">3 Hari Terakhir</option>
-                                           <option value="7_hari">7 Hari Terakhir</option>
-                                       </>}
-                                       {timeRange === 'minggu' && <>
-                                           <option value="minggu_ini">Minggu Ini</option>
-                                           <option value="4_minggu">4 Minggu Terakhir</option>
-                                           <option value="7_minggu">7 Minggu Terakhir</option>
-                                       </>}
-                                       {timeRange === 'bulan' && <>
-                                           <option value="bulan_ini">Bulan Ini</option>
-                                           <option value="3_bulan">3 Bulan Terakhir</option>
-                                           <option value="6_bulan">6 Bulan Terakhir</option>
-                                       </>}
-                                       {timeRange === 'tahun' && <>
-                                           <option value="tahun_ini">Tahun Ini</option>
-                                           <option value="2_tahun">1-2 Tahun Terakhir</option>
-                                           <option value="5_tahun">5 Tahun Terakhir</option>
-                                       </>}
-                                   </select>
-                               )}
-                               <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                                   {(['hari', 'minggu', 'bulan', 'tahun'] as const).map(t => (
-                                       <button 
-                                           key={t}
-                                           onClick={() => {
-                                               setTimeRange(t);
-                                               setTimeDuration(t + '_ini');
-                                           }}
-                                           className={cn(
-                                               "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
-                                               timeRange === t ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-                                           )}
-                                       >
-                                           {t}
-                                       </button>
-                                   ))}
-                               </div>
-                           </div>
-                       </div>
+            <div className="flex flex-col gap-4 lg:gap-6 mb-6">
+                {/* Arrival Chart */}
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
+                   <Bug className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-12 transition-transform duration-[2s] group-hover:scale-110 group-hover:-rotate-12 z-0 pointer-events-none" />
+                   <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                       <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                           <PieChart className="w-5 h-5 text-emerald-500" />
+                           Fluktuasi Waktu Kedatangan
+                       </h3>
+                       <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                            <select
+                                value={timeDuration}
+                                onChange={(e) => setTimeDuration(e.target.value)}
+                                className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                            >
+                                {timeRange === 'hari' && <>
+                                    <option value="hari_ini">Hari Ini</option>
+                                    <option value="3_hari">3 Hari Terakhir</option>
+                                    <option value="7_hari">7 Hari Terakhir</option>
+                                </>}
+                                {timeRange === 'minggu' && <>
+                                    <option value="minggu_ini">Minggu Ini</option>
+                                    <option value="4_minggu">4 Minggu Terakhir</option>
+                                    <option value="7_minggu">7 Minggu Terakhir</option>
+                                </>}
+                                {timeRange === 'bulan' && <>
+                                    <option value="bulan_ini">Bulan Ini</option>
+                                    <option value="3_bulan">3 Bulan Terakhir</option>
+                                    <option value="6_bulan">6 Bulan Terakhir</option>
+                                </>}
+                                {timeRange === 'tahun' && <>
+                                    <option value="tahun_ini">Tahun Ini</option>
+                                    <option value="2_tahun">1-2 Tahun Terakhir</option>
+                                    <option value="5_tahun">5 Tahun Terakhir</option>
+                                </>}
+                            </select>
+                            
+                            {!isDemoMode && (
+                               <select
+                                   value={chartIntervalAsli}
+                                   onChange={(e) => setChartIntervalAsli(Number(e.target.value))}
+                                   className="w-full sm:w-auto bg-white border border-gray-300 text-gray-900 text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                               >
+                                   <option value={60}>Setiap 1 Jam</option>
+                                   <option value={30}>Setiap 30 Menit</option>
+                                   <option value={15}>Setiap 15 Menit</option>
+                                   <option value={5}>Setiap 5 Menit</option>
+                                   <option value={1}>Setiap 1 Menit</option>
+                               </select>
+                            )}
+
+                            <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
+                                {(['hari', 'minggu', 'bulan', 'tahun'] as const).map(t => (
+                                    <button 
+                                        key={t}
+                                        onClick={() => {
+                                            setTimeRange(t);
+                                            setTimeDuration(t + '_ini');
+                                        }}
+                                        className={cn(
+                                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                                            timeRange === t ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                                        )}
+                                    >
+                                        {t}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        </div>
                        <div className="relative w-full h-64 md:h-72 min-h-[200px]">
                           {isDataLoading ? (
                              <div className="w-full h-full flex flex-col gap-4">
@@ -1172,12 +1521,6 @@ export default function App() {
                                    <div className="absolute top-0 bottom-0 left-[50%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
                                    <div className="absolute top-0 bottom-0 left-[80%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
                                 </div>
-                             </div>
-                          ) : chartData.length === 0 ? (
-                             <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
-                                <Leaf className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
-                                <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">Belum ada data tangkapan ngengat</p>
-                                <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">Data akan muncul di sini setelah sensor mulai mendeteksi.</p>
                              </div>
                           ) : (
                           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
@@ -1204,34 +1547,32 @@ export default function App() {
                                Perbandingan Efektivitas
                            </h3>
                            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                               {isDemoMode && (
-                                   <select
-                                       value={effectTimeDuration}
-                                       onChange={(e) => setEffectTimeDuration(e.target.value)}
-                                       className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
-                                   >
-                                       {effectTimeRange === 'hari' && <>
-                                           <option value="hari_ini">Hari Ini</option>
-                                           <option value="3_hari">3 Hari Terakhir</option>
-                                           <option value="7_hari">7 Hari Terakhir</option>
-                                       </>}
-                                       {effectTimeRange === 'minggu' && <>
-                                           <option value="minggu_ini">Minggu Ini</option>
-                                           <option value="4_minggu">4 Minggu Terakhir</option>
-                                           <option value="7_minggu">7 Minggu Terakhir</option>
-                                       </>}
-                                       {effectTimeRange === 'bulan' && <>
-                                           <option value="bulan_ini">Bulan Ini</option>
-                                           <option value="3_bulan">3 Bulan Terakhir</option>
-                                           <option value="6_bulan">6 Bulan Terakhir</option>
-                                       </>}
-                                       {effectTimeRange === 'tahun' && <>
-                                           <option value="tahun_ini">Tahun Ini</option>
-                                           <option value="2_tahun">1-2 Tahun Terakhir</option>
-                                           <option value="5_tahun">5 Tahun Terakhir</option>
-                                       </>}
-                                   </select>
-                               )}
+                                <select
+                                    value={effectTimeDuration}
+                                    onChange={(e) => setEffectTimeDuration(e.target.value)}
+                                    className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                                >
+                                    {effectTimeRange === 'hari' && <>
+                                        <option value="hari_ini">Hari Ini</option>
+                                        <option value="3_hari">3 Hari Terakhir</option>
+                                        <option value="7_hari">7 Hari Terakhir</option>
+                                    </>}
+                                    {effectTimeRange === 'minggu' && <>
+                                        <option value="minggu_ini">Minggu Ini</option>
+                                        <option value="4_minggu">4 Minggu Terakhir</option>
+                                        <option value="7_minggu">7 Minggu Terakhir</option>
+                                    </>}
+                                    {effectTimeRange === 'bulan' && <>
+                                        <option value="bulan_ini">Bulan Ini</option>
+                                        <option value="3_bulan">3 Bulan Terakhir</option>
+                                        <option value="6_bulan">6 Bulan Terakhir</option>
+                                    </>}
+                                    {effectTimeRange === 'tahun' && <>
+                                        <option value="tahun_ini">Tahun Ini</option>
+                                        <option value="2_tahun">1-2 Tahun Terakhir</option>
+                                        <option value="5_tahun">5 Tahun Terakhir</option>
+                                    </>}
+                                </select>
                                <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
                                    {(['total', 'rata-rata'] as const).map(m => (
                                        <button 
@@ -1272,12 +1613,6 @@ export default function App() {
                                 <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm z-10" style={{ height: '70%' }}></div>
                                 <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm z-10" style={{ height: '45%' }}></div>
                              </div>
-                          ) : (isDemoMode ? effectChartData.NodeA === 0 && effectChartData.NodeB === 0 : nodeA.uv365 === 0 && nodeB.uv395 === 0) ? (
-                             <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
-                                <Bug className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
-                                <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">Tidak ada data untuk dibandingkan</p>
-                                <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">Data tangkapan masing-masing node akan dibandingkan di sini.</p>
-                             </div>
                           ) : (
                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                               <BarChart data={[{ 
@@ -1298,7 +1633,6 @@ export default function App() {
                        </div>
                     </div>
                 </div>
-            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6" id="log-section">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm relative overflow-hidden">
@@ -1351,7 +1685,7 @@ export default function App() {
                    </div>
                    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 max-h-80 overflow-y-auto">
                        <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                           <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-900 sticky top-0">
+                           <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
                                <tr>
                                    <th className="px-4 py-3">Waktu (Timestamp)</th>
                                    <th className="px-4 py-3">Sumber Node</th>
@@ -1378,10 +1712,10 @@ export default function App() {
                                    <tr 
                                        key={log.id} 
                                        className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition cursor-help relative group"
-                                       title={`Detail Aktivitas:\nWaktu: ${new Date(log.timestamp).toLocaleString('id-ID')}\nSumber: ${log.source}\nAksi Lengkap: Hama terdeteksi memotong pancaran sensor inframerah (${log.action || 'IR Terpicu (+1)'}). Data berhasil direkam sistem.`}
+                                       title={`Detail Aktivitas:\nWaktu: ${safeParseDate(log.timestamp || log.id).toLocaleString('id-ID')}\nSumber: ${log.source || log.node}\nAksi Lengkap: Hama terdeteksi memotong pancaran sensor inframerah (${log.action || 'IR Terpicu (+1)'}). Data berhasil direkam sistem.`}
                                    >
-                                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-200">{new Date(log.timestamp).toLocaleTimeString('id-ID')}</td>
-                                       <td className="px-4 py-3 dark:text-gray-300">{log.source}</td>
+                                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-200">{safeParseDate(log.timestamp || log.id).toLocaleTimeString('id-ID')}</td>
+                                       <td className="px-4 py-3 dark:text-gray-300">{log.source || log.node}</td>
                                        <td className="px-4 py-3 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                                            <CheckCircle2 className="w-4 h-4"/> 
                                            <span className="underline decoration-emerald-300 dark:decoration-emerald-700 decoration-dashed underline-offset-4">{log.action || 'IR Terpicu (+1)'}</span>
@@ -1470,14 +1804,14 @@ export default function App() {
       {/* Settings Modal */}
       {isSettingsOpen && (
           <div className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity" onClick={(e) => e.target === e.currentTarget && setSettingsOpen(false)}>
-              <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50">
+              <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm max-h-[90vh] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 shrink-0">
                       <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><SettingsIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400"/> Pengaturan Halaman</h3>
                       <button onClick={() => setSettingsOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                           <X className="w-5 h-5"/>
                       </button>
                   </div>
-                  <div className="p-5 space-y-6">
+                  <div className="p-5 space-y-6 overflow-y-auto">
                       <div>
                           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Sumber Data (Koneksi)</label>
                           <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-1.5 border border-emerald-200 dark:border-emerald-800 cursor-pointer w-full" onClick={() => {
@@ -1496,6 +1830,73 @@ export default function App() {
                               <div className={cn("flex-1 text-center py-2.5 text-xs sm:text-sm font-bold rounded-md transition-all", !isDemoMode ? "bg-white dark:bg-emerald-700 shadow-sm text-emerald-700 dark:text-white" : "text-emerald-600 dark:text-emerald-400")}>
                                   DATA ASLI
                               </div>
+                          </div>
+                      </div>
+                      <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Target Perangkat ESP8266</label>
+                          <p className="text-xs text-gray-500 mb-3">Tentukan Node mana yang akan diisi datanya oleh modul ESP8266 Anda saat ini.</p>
+                          <div className="flex flex-col gap-2">
+                             <div className="flex items-center gap-2">
+                                <button
+                                   onClick={() => {
+                                      setEspTargetNode('A');
+                                      localStorage.setItem('espTargetNode', 'A');
+                                   }}
+                                   className={cn("flex-1 py-2 text-xs sm:text-sm font-bold rounded-lg border transition-all", espTargetNode === 'A' ? "bg-emerald-100 border-emerald-500 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-500" : "bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400")}
+                                >
+                                   Jadikan Node A (365nm)
+                                </button>
+                                <button
+                                   onClick={() => {
+                                      setEspTargetNode('B');
+                                      localStorage.setItem('espTargetNode', 'B');
+                                   }}
+                                   className={cn("flex-1 py-2 text-xs sm:text-sm font-bold rounded-lg border transition-all", espTargetNode === 'B' ? "bg-blue-100 border-blue-500 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400 dark:border-blue-500" : "bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400")}
+                                >
+                                   Jadikan Node B (395nm)
+                                </button>
+                             </div>
+                             <div className="flex items-center gap-2 mt-2">
+                                <button
+                                   onClick={() => resetTangkapan('A', false)}
+                                   className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900/50 dark:text-red-400"
+                                >
+                                   Reset Node A (Lokal)
+                                </button>
+                                <button
+                                   onClick={() => resetTangkapan('A', true)}
+                                   className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 dark:bg-red-900/40 dark:border-red-900/70 dark:text-red-300"
+                                >
+                                   Reset A (Lokal & DB)
+                                </button>
+                             </div>
+                             <div className="flex items-center gap-2 mt-2">
+                                <button
+                                   onClick={() => resetTangkapan('B', false)}
+                                   className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900/50 dark:text-red-400"
+                                >
+                                   Reset Node B (Lokal)
+                                </button>
+                                <button
+                                   onClick={() => resetTangkapan('B', true)}
+                                   className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 dark:bg-red-900/40 dark:border-red-900/70 dark:text-red-300"
+                                >
+                                   Reset B (Lokal & DB)
+                                </button>
+                             </div>
+                             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                 <button
+                                     onClick={fetchDataFromGoogleSheets}
+                                     disabled={isSyncingSheet || isDemoMode}
+                                     className="w-full flex items-center justify-center gap-2 py-2 text-xs sm:text-sm font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800 disabled:opacity-50 transition-colors"
+                                 >
+                                     {isSyncingSheet ? <Loader2 className="w-4 h-4 animate-spin"/> : <Download className="w-4 h-4" />}
+                                     Tarik Data dari Google Sheets
+                                 </button>
+                                 <p className="text-[10px] text-gray-500 mt-1.5 mb-0 text-center leading-tight">
+                                     Gunakan ini untuk memulihkan total tangkapan jika tidak sengaja ter-reset (Membutuhkan dukungan "fetchData" di Backend).
+                                 </p>
+                             </div>
                           </div>
                       </div>
                       <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
@@ -1677,10 +2078,10 @@ export default function App() {
                  setIsEditingProfile(false);
               }
           }}>
-              <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transform scale-100 transition-transform">
+              <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transform scale-100 transition-transform flex flex-col max-h-[90vh]">
                   
                   {isEditingProfile ? (
-                     <div className="flex flex-col max-h-[85vh]">
+                     <div className="flex flex-col overflow-hidden">
                         <div className="flex justify-between items-center p-5 sm:p-6 border-b border-gray-100 dark:border-gray-700/50 shrink-0">
                             <h3 className="font-bold text-lg text-gray-900 dark:text-white">Edit Profil</h3>
                             <button onClick={() => setIsEditingProfile(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
