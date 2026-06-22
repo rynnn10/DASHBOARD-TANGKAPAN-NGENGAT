@@ -909,6 +909,7 @@ export default function App() {
   });
   const espTargetNodeRef = React.useRef(espTargetNode);
   const mqttClientRef = React.useRef<ReturnType<typeof mqtt.connect> | null>(null);
+  const [relayMode, setRelayMode] = useState<{ A: "auto" | "manual"; B: "auto" | "manual" }>({ A: "auto", B: "auto" });
   useEffect(() => {
     espTargetNodeRef.current = espTargetNode;
   }, [espTargetNode]);
@@ -947,6 +948,7 @@ export default function App() {
       client.subscribe("dashboard/ngengat/deteksi");
       client.subscribe("dashboard/ngengat/baterai");
       client.subscribe("dashboard/ngengat/lingkungan");
+      client.subscribe("dashboard/ngengat/settings"); // retained — sinkron pengaturan antar device
     });
 
     client.on("message", (topic, message) => {
@@ -1070,6 +1072,16 @@ export default function App() {
           setDhtHistoryAll((prev) =>
             [...prev, { timestamp: now, node: nodeKey, temp, humidity }],
           );
+        }
+        if (topic === "dashboard/ngengat/settings") {
+          if (typeof payload.bufferBattery === "boolean") {
+            setBufferBatteryEnabled((prev) => {
+              if (prev !== payload.bufferBattery) {
+                localStorage.setItem("bufferBatteryEnabled", String(payload.bufferBattery));
+              }
+              return payload.bufferBattery;
+            });
+          }
         }
       } catch (err) {
         console.error("Gagal parsing MQTT:", err);
@@ -3614,9 +3626,12 @@ export default function App() {
                       onClick={() => {
                         const newVal = !bufferBatteryEnabled;
                         setBufferBatteryEnabled(newVal);
-                        localStorage.setItem(
-                          "bufferBatteryEnabled",
-                          String(newVal),
+                        localStorage.setItem("bufferBatteryEnabled", String(newVal));
+                        // Publish retained agar semua device sinkron
+                        mqttClientRef.current?.publish(
+                          "dashboard/ngengat/settings",
+                          JSON.stringify({ bufferBattery: newVal }),
+                          { retain: true, qos: 1 },
                         );
                       }}
                       className={cn(
@@ -3653,39 +3668,66 @@ export default function App() {
                     Kontrol Relay Lampu UV
                   </label>
                   <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
-                    ON/OFF lampu UV tiap node secara manual via MQTT. Otomatis dinonaktifkan saat kirim perintah.
+                    Kontrol manual lampu UV tiap node. <strong>Auto</strong> = ikuti jadwal DS3231 (ON 18:00 / OFF 06:00).
                   </p>
                   <div className="space-y-2.5">
                     {(["A", "B"] as const).map((node) => {
                       const isOn = node === "A" ? nodeA.led : nodeB.led;
                       const isOnline = node === "A" ? nodeA.online : nodeB.online;
+                      const mode = relayMode[node];
                       const label = node === "A" ? "Node A — UV 365nm" : "Node B — UV 395nm";
+
                       const publishRelay = (state: boolean) => {
                         if (!mqttClientRef.current) return;
-                        const payload = JSON.stringify({ node, state });
-                        mqttClientRef.current.publish("dashboard/ngengat/relay", payload);
-                        // Optimistic update
+                        mqttClientRef.current.publish(
+                          "dashboard/ngengat/relay",
+                          JSON.stringify({ node, state }),
+                        );
+                        setRelayMode((prev) => ({ ...prev, [node]: "manual" }));
                         if (node === "A") setNodeA((p) => ({ ...p, led: state }));
                         else setNodeB((p) => ({ ...p, led: state }));
                       };
+
+                      const publishAuto = () => {
+                        if (!mqttClientRef.current) return;
+                        mqttClientRef.current.publish(
+                          "dashboard/ngengat/relay",
+                          JSON.stringify({ node, auto: true }),
+                        );
+                        setRelayMode((prev) => ({ ...prev, [node]: "auto" }));
+                      };
+
+                      const statusText = !isOnline
+                        ? "Node Offline"
+                        : mode === "auto"
+                          ? `Otomatis — Lampu ${isOn ? "Menyala" : "Mati"}`
+                          : `Manual — Lampu ${isOn ? "Menyala" : "Mati"}`;
+                      const statusColor = !isOnline
+                        ? "text-red-400"
+                        : mode === "auto"
+                          ? "text-emerald-500 dark:text-emerald-400"
+                          : isOn
+                            ? "text-yellow-500"
+                            : "text-gray-400 dark:text-gray-500";
+
                       return (
                         <div
                           key={node}
-                          className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-xl px-3 py-2.5 border border-gray-200 dark:border-gray-600"
+                          className="bg-gray-50 dark:bg-gray-700/50 rounded-xl px-3 py-2.5 border border-gray-200 dark:border-gray-600"
                         >
-                          <div>
-                            <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{label}</p>
-                            <p className={`text-[10px] font-medium mt-0.5 ${isOnline ? (isOn ? "text-yellow-500" : "text-gray-400 dark:text-gray-500") : "text-red-400"}`}>
-                              {isOnline ? (isOn ? "Lampu Menyala" : "Lampu Mati") : "Node Offline"}
-                            </p>
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{label}</p>
+                              <p className={`text-[10px] font-medium mt-0.5 ${statusColor}`}>{statusText}</p>
+                            </div>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <button
                               disabled={!isOnline || !mqttClientRef.current || isDemoMode}
                               onClick={() => publishRelay(false)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                                !isOn && isOnline
-                                  ? "bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-500"
+                              className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                mode === "manual" && !isOn && isOnline
+                                  ? "bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-100 border-gray-400 dark:border-gray-400"
                                   : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
                               }`}
                             >
@@ -3693,9 +3735,20 @@ export default function App() {
                             </button>
                             <button
                               disabled={!isOnline || !mqttClientRef.current || isDemoMode}
+                              onClick={publishAuto}
+                              className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                mode === "auto" && isOnline
+                                  ? "bg-emerald-500 text-white border-emerald-600"
+                                  : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                              }`}
+                            >
+                              AUTO
+                            </button>
+                            <button
+                              disabled={!isOnline || !mqttClientRef.current || isDemoMode}
                               onClick={() => publishRelay(true)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                                isOn && isOnline
+                              className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                mode === "manual" && isOn && isOnline
                                   ? "bg-yellow-400 text-yellow-900 border-yellow-500"
                                   : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-yellow-50 dark:hover:bg-yellow-900/20"
                               }`}
