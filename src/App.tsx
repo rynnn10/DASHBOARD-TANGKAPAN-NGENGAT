@@ -54,6 +54,7 @@ import { clsx } from "clsx";
 import type { ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import mqtt from "mqtt";
+import { useRegisterSW } from "virtual:pwa-register/react";
 const safeParseDate = (dateStr: any) => {
   if (!dateStr) return new Date();
   const d = new Date(dateStr);
@@ -629,6 +630,12 @@ const ImageUpload = ({
 };
 
 export default function App() {
+  // Deteksi Service Worker update — tampilkan banner refresh ke user
+  const {
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW();
+
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isProfileOpen, setProfileOpen] = useState(false);
@@ -2160,6 +2167,25 @@ export default function App() {
 
   return (
     <div className="relative flex h-screen overflow-hidden text-gray-800 bg-gray-50 dark:bg-gray-950 dark:text-gray-200 transition-colors duration-500 font-sans">
+      {/* Banner update Service Worker — muncul ketika versi baru tersedia di cache */}
+      <AnimatePresence>
+        {needRefresh && (
+          <motion.div
+            initial={{ y: -60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -60, opacity: 0 }}
+            className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-between gap-3 bg-emerald-600 text-white text-sm px-4 py-2.5 shadow-lg"
+          >
+            <span className="font-medium">Versi baru tersedia!</span>
+            <button
+              onClick={() => updateServiceWorker(true)}
+              className="flex-shrink-0 bg-white text-emerald-700 font-semibold text-xs px-3 py-1 rounded-full hover:bg-emerald-50 transition-colors"
+            >
+              Perbarui sekarang
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Decorative Blur Backgrounds */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] dark:opacity-[0.02]">
@@ -2841,6 +2867,7 @@ export default function App() {
                             borderColor: "#374151",
                             color: "white",
                           }}
+                          cursor={false}
                         />
                         <Legend />
                         <Line
@@ -3006,7 +3033,7 @@ export default function App() {
                             borderColor: "#374151",
                             color: "white",
                           }}
-                          cursor={{ fill: "rgba(255,255,255,0.05)" }}
+                          cursor={false}
                         />
                         <Legend />
                         <Bar
