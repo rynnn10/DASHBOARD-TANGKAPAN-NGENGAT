@@ -74,8 +74,7 @@ const safeParseDate = (dateStr: any) => {
   return d;
 };
 
-const SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbzJcenLeLaO_80BkHS_aVBtqiIUCZ3ETll0JeOoyfqy2zT-sClhoPmQTH310M0s2pHm/exec";
+const SCRIPT_URL = import.meta.env.VITE_GAS_URL || "";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
