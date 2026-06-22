@@ -754,6 +754,12 @@ export default function App() {
   // Auth & Profile States
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
+  const [pendingProfile, setPendingProfile] = useState<{
+    displayName: string;
+    email: string;
+    photoURL: string;
+    coverUrl: string;
+  } | null>(null);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -786,6 +792,22 @@ export default function App() {
     }, 1200); // Simulate network latency
     return () => clearTimeout(timer);
   }, [isDemoMode, userProfile]);
+
+  // Tutup modal login setelah animasi sukses — pakai useEffect agar andal di mobile
+  useEffect(() => {
+    if (!loginSuccess || !pendingProfile) return;
+    const timer = setTimeout(() => {
+      setUserProfile(pendingProfile);
+      localStorage.setItem("userProfile", JSON.stringify(pendingProfile));
+      setPendingProfile(null);
+      setLoginModalOpen(false);
+      setLoginSuccess(false);
+      setLoginEmail("");
+      setLoginPassword("");
+      setLoginName("");
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [loginSuccess, pendingProfile]);
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState("");
@@ -1969,24 +1991,16 @@ export default function App() {
       });
       const result = await response.json();
       if (result.status === "success") {
+        const profile = {
+          displayName: result.data
+            ? result.data.name || loginEmail.split("@")[0]
+            : loginEmail.split("@")[0],
+          email: loginEmail,
+          photoURL: result.data ? result.data.photoURL || "" : "",
+          coverUrl: result.data ? result.data.coverUrl || "" : "",
+        };
+        setPendingProfile(profile);  // disimpan dulu, useEffect yang eksekusi setelah animasi
         setLoginSuccess(true);
-        setTimeout(() => {
-          const profile = {
-            displayName: result.data
-              ? result.data.name || loginEmail.split("@")[0]
-              : loginEmail.split("@")[0],
-            email: loginEmail,
-            photoURL: result.data ? result.data.photoURL || "" : "",
-            coverUrl: result.data ? result.data.coverUrl || "" : "",
-          };
-          setUserProfile(profile);
-          localStorage.setItem("userProfile", JSON.stringify(profile));
-          setLoginModalOpen(false);
-          setLoginSuccess(false);
-          setLoginEmail("");
-          setLoginPassword("");
-          setLoginName("");
-        }, 1500); // Wait 1.5s for animation
       } else {
         setLoginError(result.message || "Email atau password salah.");
       }
@@ -2868,7 +2882,7 @@ export default function App() {
                         )}
                       </select>
                     }
-                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-auto shrink-0">
+                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
                       {(["total", "rata-rata"] as const).map((m) => (
                         <button
                           key={m}
