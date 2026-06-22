@@ -1,21 +1,378 @@
-const safeParseDate = (dateStr: any) => { if (!dateStr) return new Date(); const d = new Date(dateStr); if (isNaN(d.getTime()) && typeof dateStr === 'string') { const parts = dateStr.split(/[Ts]/); const dParts = parts[0].split(/[/-]/); if(dParts.length === 3) { let day=dParts[0], month=dParts[1], year=dParts[2]; if(year.length === 2) { year = dParts[0]; day=dParts[2]; } return new Date(`${year}-${month}-${day}T${parts[1] || '00:00:00'}`); } } return d; };
-import React, { useState, useEffect } from 'react';
-import mqtt from 'mqtt';
-import { Leaf, X, PieChart, List, Settings, Menu, Clock, Settings as SettingsIcon, Bug, Wifi, Battery, BatteryMedium, Lightbulb, RotateCcw, Microscope, SatelliteDish, CheckCircle2, Edit2, Camera, Save, Image as ImageIcon, Download, Database, Loader2, Copy, LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { clsx } from 'clsx';
-import type { ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import React, { useState, useEffect } from "react";
+import {
+  Leaf,
+  X,
+  PieChart,
+  List,
+  Settings,
+  Menu,
+  Clock,
+  Settings as SettingsIcon,
+  Bug,
+  Wifi,
+  Battery,
+  BatteryMedium,
+  Lightbulb,
+  RotateCcw,
+  Microscope,
+  SatelliteDish,
+  CheckCircle2,
+  Edit2,
+  Camera,
+  Save,
+  Image as ImageIcon,
+  Download,
+  Database,
+  Loader2,
+  Copy,
+  LogIn,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  Thermometer,
+  Droplets,
+  Wind,
+  Cpu,
+  Zap,
+  Cable,
+  Info,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+} from "recharts";
+import { clsx } from "clsx";
+import type { ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+import mqtt from "mqtt";
+const safeParseDate = (dateStr: any) => {
+  if (!dateStr) return new Date();
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime()) && typeof dateStr === "string") {
+    const parts = dateStr.split(/[Ts]/);
+    const dParts = parts[0].split(/[/-]/);
+    if (dParts.length === 3) {
+      let day = dParts[0],
+        month = dParts[1],
+        year = dParts[2];
+      if (year.length === 2) {
+        year = dParts[0];
+        day = dParts[2];
+      }
+      return new Date(`${year}-${month}-${day}T${parts[1] || "00:00:00"}`);
+    }
+  }
+  return d;
+};
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzJcenLeLaO_80BkHS_aVBtqiIUCZ3ETll0JeOoyfqy2zT-sClhoPmQTH310M0s2pHm/exec";
+const SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbzJcenLeLaO_80BkHS_aVBtqiIUCZ3ETll0JeOoyfqy2zT-sClhoPmQTH310M0s2pHm/exec";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-import ReactCrop, { type Crop, centerCrop, makeAspectCrop } from 'react-image-crop';
-import 'react-image-crop/dist/ReactCrop.css';
+const HARI_NAMA = [
+  "Minggu",
+  "Senin",
+  "Selasa",
+  "Rabu",
+  "Kamis",
+  "Jumat",
+  "Sabtu",
+];
+const BULAN_NAMA = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "Mei",
+  "Jun",
+  "Jul",
+  "Ags",
+  "Sep",
+  "Okt",
+  "Nov",
+  "Des",
+];
+
+// Tentukan node dari sumber log (selaras dengan logika di kode.gs)
+function logNodeKey(source: string): "NodeA" | "NodeB" | null {
+  if (!source) return null;
+  if (source.indexOf("365") !== -1 || source.indexOf("A") !== -1)
+    return "NodeA";
+  if (source.indexOf("395") !== -1 || source.indexOf("B") !== -1)
+    return "NodeB";
+  return null;
+}
+
+// Bangun data grafik time-series dari LOG NYATA (dipakai di Mode Asli).
+// Mengembalikan [] jika tidak ada tangkapan sama sekali (agar empty-state tampil).
+function buildChartFromLogs(
+  logs: any[],
+  range: "hari" | "minggu" | "bulan" | "tahun",
+  duration: string,
+): { time: string; NodeA: number; NodeB: number }[] {
+  const now = new Date();
+  const DAY = 86400000;
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+  const buckets: { time: string; start: number; end: number }[] = [];
+
+  if (range === "hari") {
+    if (duration === "hari_ini") {
+      const base = startOfDay(now);
+      for (let h = 0; h < 24; h++) {
+        const start = base + h * 3600000;
+        buckets.push({
+          time: `${String(h).padStart(2, "0")}:00`,
+          start,
+          end: start + 3600000,
+        });
+      }
+    } else {
+      const count = duration === "3_hari" ? 3 : 7;
+      const base = startOfDay(now);
+      for (let i = 0; i < count; i++) {
+        const start = base - (count - 1 - i) * DAY;
+        buckets.push({ time: `H-${count - 1 - i}`, start, end: start + DAY });
+      }
+    }
+  } else if (range === "minggu") {
+    const dow = (now.getDay() + 6) % 7; // 0 = Senin
+    const monday = startOfDay(now) - dow * DAY;
+    if (duration === "minggu_ini") {
+      for (let i = 0; i < 7; i++) {
+        const start = monday + i * DAY;
+        buckets.push({
+          time: HARI_NAMA[new Date(start).getDay()],
+          start,
+          end: start + DAY,
+        });
+      }
+    } else {
+      const count = duration === "4_minggu" ? 4 : 7;
+      for (let i = 0; i < count; i++) {
+        const start = monday - (count - 1 - i) * 7 * DAY;
+        buckets.push({
+          time: `Minggu ke-${count - i}`,
+          start,
+          end: start + 7 * DAY,
+        });
+      }
+    }
+  } else if (range === "bulan") {
+    if (duration === "bulan_ini") {
+      const y = now.getFullYear();
+      const m = now.getMonth();
+      const ranges = [
+        [1, 8],
+        [8, 15],
+        [15, 22],
+        [22, 32],
+      ];
+      ranges.forEach((r, idx) => {
+        buckets.push({
+          time: `Minggu ${idx + 1}`,
+          start: new Date(y, m, r[0]).getTime(),
+          end: new Date(y, m, r[1]).getTime(),
+        });
+      });
+    } else {
+      const count = duration === "3_bulan" ? 3 : 6;
+      for (let i = 0; i < count; i++) {
+        const d = new Date(
+          now.getFullYear(),
+          now.getMonth() - (count - 1 - i),
+          1,
+        );
+        buckets.push({
+          time: BULAN_NAMA[d.getMonth()],
+          start: d.getTime(),
+          end: new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime(),
+        });
+      }
+    }
+  } else {
+    if (duration === "tahun_ini") {
+      const y = now.getFullYear();
+      for (let mo = 0; mo < 12; mo++) {
+        buckets.push({
+          time: BULAN_NAMA[mo],
+          start: new Date(y, mo, 1).getTime(),
+          end: new Date(y, mo + 1, 1).getTime(),
+        });
+      }
+    } else {
+      const count = duration === "2_tahun" ? 2 : 5;
+      for (let i = 0; i < count; i++) {
+        const yr = now.getFullYear() - (count - 1 - i);
+        buckets.push({
+          time: `${yr}`,
+          start: new Date(yr, 0, 1).getTime(),
+          end: new Date(yr + 1, 0, 1).getTime(),
+        });
+      }
+    }
+  }
+
+  const result = buckets.map((b) => ({ time: b.time, NodeA: 0, NodeB: 0 }));
+  for (const log of logs || []) {
+    const ts =
+      typeof log.timestamp === "number"
+        ? log.timestamp
+        : new Date(log.timestamp).getTime();
+    if (!ts) continue;
+    const key = logNodeKey(log.source || "");
+    if (!key) continue;
+    for (let i = 0; i < buckets.length; i++) {
+      if (ts >= buckets[i].start && ts < buckets[i].end) {
+        result[i][key] += 1;
+        break;
+      }
+    }
+  }
+
+  const hasData = result.some((r) => r.NodeA > 0 || r.NodeB > 0);
+  return hasData ? result : [];
+}
+
+function buildDhtChartFromHistory(
+  history: { timestamp: number; node: string; temp: number; humidity: number }[],
+  range: "hari" | "minggu" | "bulan" | "tahun",
+  duration: string,
+): { time: string; tempA: number | null; humA: number | null; tempB: number | null; humB: number | null }[] {
+  const now = new Date();
+  const DAY = 86400000;
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+  const buckets: { time: string; start: number; end: number }[] = [];
+
+  if (range === "hari") {
+    if (duration === "hari_ini") {
+      const base = startOfDay(now);
+      for (let h = 0; h < 24; h++) {
+        const start = base + h * 3600000;
+        buckets.push({ time: `${String(h).padStart(2, "0")}:00`, start, end: start + 3600000 });
+      }
+    } else {
+      const count = duration === "3_hari" ? 3 : 7;
+      const base = startOfDay(now);
+      for (let i = 0; i < count; i++) {
+        const start = base - (count - 1 - i) * DAY;
+        buckets.push({ time: `H-${count - 1 - i}`, start, end: start + DAY });
+      }
+    }
+  } else if (range === "minggu") {
+    const dow = (now.getDay() + 6) % 7;
+    const monday = startOfDay(now) - dow * DAY;
+    if (duration === "minggu_ini") {
+      for (let i = 0; i < 7; i++) {
+        const start = monday + i * DAY;
+        buckets.push({ time: HARI_NAMA[new Date(start).getDay()], start, end: start + DAY });
+      }
+    } else {
+      const count = duration === "4_minggu" ? 4 : 7;
+      for (let i = 0; i < count; i++) {
+        const start = monday - (count - 1 - i) * 7 * DAY;
+        buckets.push({ time: `Minggu ke-${count - i}`, start, end: start + 7 * DAY });
+      }
+    }
+  } else if (range === "bulan") {
+    if (duration === "bulan_ini") {
+      const y = now.getFullYear();
+      const m = now.getMonth();
+      ([[1, 8], [8, 15], [15, 22], [22, 32]] as [number, number][]).forEach((r, idx) => {
+        buckets.push({
+          time: `Minggu ${idx + 1}`,
+          start: new Date(y, m, r[0]).getTime(),
+          end: new Date(y, m, r[1]).getTime(),
+        });
+      });
+    } else {
+      const count = duration === "3_bulan" ? 3 : 6;
+      for (let i = 0; i < count; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - (count - 1 - i), 1);
+        buckets.push({
+          time: BULAN_NAMA[d.getMonth()],
+          start: d.getTime(),
+          end: new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime(),
+        });
+      }
+    }
+  } else {
+    if (duration === "tahun_ini") {
+      const y = now.getFullYear();
+      for (let mo = 0; mo < 12; mo++) {
+        buckets.push({
+          time: BULAN_NAMA[mo],
+          start: new Date(y, mo, 1).getTime(),
+          end: new Date(y, mo + 1, 1).getTime(),
+        });
+      }
+    } else {
+      const count = duration === "2_tahun" ? 2 : 5;
+      for (let i = 0; i < count; i++) {
+        const yr = now.getFullYear() - (count - 1 - i);
+        buckets.push({
+          time: `${yr}`,
+          start: new Date(yr, 0, 1).getTime(),
+          end: new Date(yr + 1, 0, 1).getTime(),
+        });
+      }
+    }
+  }
+
+  const accum = buckets.map(() => ({
+    sumTempA: 0, cntA: 0, sumHumA: 0,
+    sumTempB: 0, cntB: 0, sumHumB: 0,
+  }));
+
+  for (const r of history || []) {
+    const ts = typeof r.timestamp === "number" ? r.timestamp : Number(r.timestamp);
+    if (!ts) continue;
+    for (let i = 0; i < buckets.length; i++) {
+      if (ts >= buckets[i].start && ts < buckets[i].end) {
+        if (r.node === "A") {
+          accum[i].sumTempA += r.temp;
+          accum[i].sumHumA += r.humidity;
+          accum[i].cntA++;
+        } else {
+          accum[i].sumTempB += r.temp;
+          accum[i].sumHumB += r.humidity;
+          accum[i].cntB++;
+        }
+        break;
+      }
+    }
+  }
+
+  return buckets.map((b, i) => ({
+    time: b.time,
+    tempA: accum[i].cntA > 0 ? Number((accum[i].sumTempA / accum[i].cntA).toFixed(1)) : null,
+    humA:  accum[i].cntA > 0 ? Number((accum[i].sumHumA  / accum[i].cntA).toFixed(1)) : null,
+    tempB: accum[i].cntB > 0 ? Number((accum[i].sumTempB / accum[i].cntB).toFixed(1)) : null,
+    humB:  accum[i].cntB > 0 ? Number((accum[i].sumHumB  / accum[i].cntB).toFixed(1)) : null,
+  }));
+}
+
+import ReactCrop, {
+  type Crop,
+  centerCrop,
+  makeAspectCrop,
+} from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
 
 function centerAspectCrop(
   mediaWidth: number,
@@ -25,7 +382,7 @@ function centerAspectCrop(
   return centerCrop(
     makeAspectCrop(
       {
-        unit: '%',
+        unit: "%",
         width: 100,
       },
       aspect,
@@ -34,21 +391,27 @@ function centerAspectCrop(
     ),
     mediaWidth,
     mediaHeight,
-  )
+  );
 }
 
-const ImageUpload = ({ label, icon: Icon, onImageUploaded, value, type }: any) => {
+const ImageUpload = ({
+  label,
+  icon: Icon,
+  onImageUploaded,
+  value,
+  type,
+}: any) => {
   const [isDragging, setIsDragging] = useState(false);
   const [cropModalOpen, setCropModalOpen] = useState(false);
-  const [imgSrc, setImgSrc] = useState('');
+  const [imgSrc, setImgSrc] = useState("");
   const imgRef = React.useRef<HTMLImageElement>(null);
   const [crop, setCrop] = useState<Crop>();
 
   const onSelectFile = (file: File) => {
-    if (!file.type.startsWith('image/')) return;
+    if (!file.type.startsWith("image/")) return;
     const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      setImgSrc(reader.result?.toString() || '');
+    reader.addEventListener("load", () => {
+      setImgSrc(reader.result?.toString() || "");
       setCropModalOpen(true);
     });
     reader.readAsDataURL(file);
@@ -56,27 +419,30 @@ const ImageUpload = ({ label, icon: Icon, onImageUploaded, value, type }: any) =
 
   const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const { width, height } = e.currentTarget;
-    if (type === 'photo') {
-        setCrop(centerAspectCrop(width, height, 1));
+    if (type === "photo") {
+      setCrop(centerAspectCrop(width, height, 1));
     } else {
-        setCrop(centerAspectCrop(width, height, 3)); // cover ratio 3:1 approx
+      setCrop(centerAspectCrop(width, height, 3)); // cover ratio 3:1 approx
     }
   };
 
   const handleCompleteCrop = () => {
     if (imgRef.current && crop && crop.width > 0 && crop.height > 0) {
       const image = imgRef.current;
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       const scaleX = image.naturalWidth / image.width;
       const scaleY = image.naturalHeight / image.height;
 
       // Extract pixel values from crop
-      const pixelCrop = crop.unit === '%' ? {
-        x: (crop.x * image.width) / 100,
-        y: (crop.y * image.height) / 100,
-        width: (crop.width * image.width) / 100,
-        height: (crop.height * image.height) / 100,
-      } : crop;
+      const pixelCrop =
+        crop.unit === "%"
+          ? {
+              x: (crop.x * image.width) / 100,
+              y: (crop.y * image.height) / 100,
+              width: (crop.width * image.width) / 100,
+              height: (crop.height * image.height) / 100,
+            }
+          : crop;
 
       // Real physical pixels of the selected area
       const cropWidth = Math.max(1, Math.round(pixelCrop.width * scaleX));
@@ -87,11 +453,11 @@ const ImageUpload = ({ label, icon: Icon, onImageUploaded, value, type }: any) =
       canvas.width = cropWidth;
       canvas.height = cropHeight;
 
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
       // Draw exactly the cropped area
-      ctx.imageSmoothingQuality = 'high';
+      ctx.imageSmoothingQuality = "high";
       ctx.drawImage(
         image,
         sx,
@@ -101,15 +467,15 @@ const ImageUpload = ({ label, icon: Icon, onImageUploaded, value, type }: any) =
         0,
         0,
         cropWidth,
-        cropHeight
+        cropHeight,
       );
 
       // Scale down if the image is extremely large, to save Firestore document size if we use base64 (which we are doing)
       // Since it's saved in Firestore as Base64, we need it to be reasonably small (under 1MB).
-      const finalCanvas = document.createElement('canvas');
-      const MAX_WIDTH = type === 'photo' ? 500 : 1200;
-      const MAX_HEIGHT = type === 'photo' ? 500 : 400;
-      
+      const finalCanvas = document.createElement("canvas");
+      const MAX_WIDTH = type === "photo" ? 500 : 1200;
+      const MAX_HEIGHT = type === "photo" ? 500 : 400;
+
       let width = cropWidth;
       let height = cropHeight;
 
@@ -121,33 +487,51 @@ const ImageUpload = ({ label, icon: Icon, onImageUploaded, value, type }: any) =
 
       finalCanvas.width = width;
       finalCanvas.height = height;
-      const finalCtx = finalCanvas.getContext('2d');
-      
+      const finalCtx = finalCanvas.getContext("2d");
+
       if (finalCtx) {
-        finalCtx.imageSmoothingQuality = 'high';
-        finalCtx.drawImage(canvas, 0, 0, cropWidth, cropHeight, 0, 0, width, height);
+        finalCtx.imageSmoothingQuality = "high";
+        finalCtx.drawImage(
+          canvas,
+          0,
+          0,
+          cropWidth,
+          cropHeight,
+          0,
+          0,
+          width,
+          height,
+        );
       }
 
       // Convert to base64
-      const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.85);
+      const dataUrl = finalCanvas.toDataURL("image/jpeg", 0.85);
       onImageUploaded(dataUrl);
       setCropModalOpen(false);
-      setImgSrc('');
+      setImgSrc("");
     } else {
       setCropModalOpen(false);
-      setImgSrc('');
+      setImgSrc("");
     }
   };
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
-      <div 
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        {label}
+      </label>
+      <div
         className={`relative border-2 border-dashed rounded-lg p-2 transition-colors text-center cursor-pointer overflow-hidden
-          ${isDragging ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-300 dark:border-gray-700 hover:border-emerald-400 dark:hover:border-emerald-600'}
+          ${isDragging ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20" : "border-gray-300 dark:border-gray-700 hover:border-emerald-400 dark:hover:border-emerald-600"}
         `}
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+        }}
         onDrop={(e) => {
           e.preventDefault();
           setIsDragging(false);
@@ -155,47 +539,65 @@ const ImageUpload = ({ label, icon: Icon, onImageUploaded, value, type }: any) =
           if (file) onSelectFile(file);
         }}
         onClick={(e) => {
-           // Prevent opening input if a user is dragging on crop modal or something
-           const input = document.createElement('input');
-           input.type = 'file';
-           input.accept = 'image/*';
-           input.onchange = (ev: any) => {
-             const file = ev.target.files[0];
-             if (file) onSelectFile(file);
-           };
-           input.click();
+          // Prevent opening input if a user is dragging on crop modal or something
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "image/*";
+          input.onchange = (ev: any) => {
+            const file = ev.target.files[0];
+            if (file) onSelectFile(file);
+          };
+          input.click();
         }}
       >
         {value ? (
-           <div className={`relative flex items-center justify-center ${type === 'photo' ? 'w-24 h-24 mx-auto' : 'w-full aspect-[3/1]'}`}>
-              <img src={value} alt="Preview" className={`max-h-full object-cover ${type === 'photo' ? 'w-full h-full rounded-full ring-2 ring-emerald-500 ring-offset-2 dark:ring-offset-gray-900' : 'w-full h-full rounded-md shadow-sm'}`} />
-              <div className={`absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center ${type === 'photo' ? 'rounded-full' : 'rounded-md'}`}>
-                  <span className="text-white text-xs font-semibold">Ganti Gambar</span>
-              </div>
-           </div>
+          <div
+            className={`relative flex items-center justify-center ${type === "photo" ? "w-24 h-24 mx-auto" : "w-full aspect-[3/1]"}`}
+          >
+            <img
+              src={value}
+              alt="Preview"
+              className={`max-h-full object-cover ${type === "photo" ? "w-full h-full rounded-full ring-2 ring-emerald-500 ring-offset-2 dark:ring-offset-gray-900" : "w-full h-full rounded-md shadow-sm"}`}
+            />
+            <div
+              className={`absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center ${type === "photo" ? "rounded-full" : "rounded-md"}`}
+            >
+              <span className="text-white text-xs font-semibold">
+                Ganti Gambar
+              </span>
+            </div>
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-4 text-gray-500 dark:text-gray-400">
-             <Icon className="w-5 h-5 mb-2 text-gray-400" />
-             <p className="text-xs font-medium">Klik atau Drag & Drop foto</p>
+            <Icon className="w-5 h-5 mb-2 text-gray-400" />
+            <p className="text-xs font-medium">Klik atau Drag & Drop foto</p>
           </div>
         )}
       </div>
 
       {cropModalOpen && !!imgSrc && (
         <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
-               <h3 className="font-semibold text-gray-900 dark:text-white">Potong {label}</h3>
-               <button onClick={() => setCropModalOpen(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                 <X className="w-5 h-5"/>
-               </button>
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                Potong {label}
+              </h3>
+              <button
+                onClick={() => setCropModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
             <div className="p-4 overflow-auto max-h-[60vh] flex justify-center bg-gray-900">
               <ReactCrop
                 crop={crop}
                 onChange={(c) => setCrop(c)}
-                aspect={type === 'photo' ? 1 : 3}
-                circularCrop={type === 'photo'}
+                aspect={type === "photo" ? 1 : 3}
+                circularCrop={type === "photo"}
               >
                 <img
                   ref={imgRef}
@@ -207,8 +609,18 @@ const ImageUpload = ({ label, icon: Icon, onImageUploaded, value, type }: any) =
               </ReactCrop>
             </div>
             <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-end gap-3">
-               <button onClick={() => setCropModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 transition">Batal</button>
-               <button onClick={handleCompleteCrop} className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition">Potong & Simpan</button>
+              <button
+                onClick={() => setCropModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 transition"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleCompleteCrop}
+                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition"
+              >
+                Potong & Simpan
+              </button>
             </div>
           </div>
         </div>
@@ -222,56 +634,150 @@ export default function App() {
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isProfileOpen, setProfileOpen] = useState(false);
   const [isSheetSettingsOpen, setSheetSettingsOpen] = useState(false);
-  const [sheetUrl, setSheetUrl] = useState(() => localStorage.getItem('googleSheetUrl') || '');
+  const [isWiringGuideOpen, setIsWiringGuideOpen] = useState(false);
+  const [sheetUrl, setSheetUrl] = useState(
+    () => localStorage.getItem("googleSheetUrl") || "",
+  );
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
-  
-  const [isDemoMode, setIsDemoMode] = useState(() => localStorage.getItem('isDemoMode') !== 'false');
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => (localStorage.getItem('theme') as any) || 'system');
-  const [dateStr, setDateStr] = useState('');
-  const [timeStr, setTimeStr] = useState('');
+  const [isSheetManagerOpen, setIsSheetManagerOpen] = useState(false);
+  const [sheetScanResult, setSheetScanResult] = useState<{
+    used: string[];
+    unused: { name: string; rows: number }[];
+  } | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [isDeletingSheets, setIsDeletingSheets] = useState(false);
+  const [selectedSheetsToDelete, setSelectedSheetsToDelete] = useState<
+    string[]
+  >([]);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetOriginNode, setResetOriginNode] = useState<"A" | "B">("A");
+  const [resetTarget, setResetTarget] = useState<"A" | "B" | "both">("A");
+  const [resetScope, setResetScope] = useState<"dashboard" | "both">(
+    "dashboard",
+  );
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [isLogResetModalOpen, setIsLogResetModalOpen] = useState(false);
+  const [logResetScope, setLogResetScope] = useState<"dashboard" | "both">(
+    "dashboard",
+  );
+  const [isLogResetConfirmOpen, setIsLogResetConfirmOpen] = useState(false);
+  const [isLogResetting, setIsLogResetting] = useState(false);
+
+  // DHT22 — Suhu & Kelembaban
+  const [dhtData, setDhtData] = useState<{
+    A: { temp: number; humidity: number; timestamp: number } | null;
+    B: { temp: number; humidity: number; timestamp: number } | null;
+  }>({ A: null, B: null });
+
+  // Buffer flush toast — muncul saat data offline masuk kembali
+  const [bufferToast, setBufferToast] = useState<{
+    id: number;
+    count: number;
+    node: string;
+  } | null>(null);
+  const bufferFlushRef = React.useRef<{
+    countA: number;
+    countB: number;
+    timer: ReturnType<typeof setTimeout> | null;
+  }>({ countA: 0, countB: 0, timer: null });
+
+  // Buffer baterai — toggle diatur di popup Pengaturan
+  const [bufferBatteryEnabled, setBufferBatteryEnabled] = useState(
+    () => localStorage.getItem("bufferBatteryEnabled") !== "false",
+  );
+  const bufferBatteryEnabledRef = React.useRef(bufferBatteryEnabled);
+  useEffect(() => {
+    bufferBatteryEnabledRef.current = bufferBatteryEnabled;
+  }, [bufferBatteryEnabled]);
+
+  // DHT history — riwayat pembacaan suhu/kelembaban untuk sinkronisasi ke Sheet
+  const [dhtHistory, setDhtHistory] = useState<
+    { timestamp: number; node: string; temp: number; humidity: number }[]
+  >([]);
+
+  // DHT semua riwayat — dari Sheet + sesi ini, untuk grafik dengan rentang waktu
+  const [dhtHistoryAll, setDhtHistoryAll] = useState<
+    { timestamp: number; node: string; temp: number; humidity: number }[]
+  >([]);
+  const [dhtTimeRange, setDhtTimeRange] = useState<"hari" | "minggu" | "bulan" | "tahun">("hari");
+  const [dhtTimeDuration, setDhtTimeDuration] = useState<string>("hari_ini");
+
+  // Signal untuk memicu auto-sync setelah data buffer IR tiba
+  const [bufferFlushSignal, setBufferFlushSignal] = useState(0);
+
+  const dhtBuiltChartData = React.useMemo(
+    () => buildDhtChartFromHistory(dhtHistoryAll, dhtTimeRange, dhtTimeDuration),
+    [dhtHistoryAll, dhtTimeRange, dhtTimeDuration],
+  );
+
+  const [isDemoMode, setIsDemoMode] = useState(
+    () => localStorage.getItem("isDemoMode") !== "false",
+  );
+  const [theme, setTheme] = useState<"light" | "dark" | "system">(
+    () => (localStorage.getItem("theme") as any) || "system",
+  );
+  const [dateStr, setDateStr] = useState("");
+  const [timeStr, setTimeStr] = useState("");
 
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      
-      const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+      const days = [
+        "Minggu",
+        "Senin",
+        "Selasa",
+        "Rabu",
+        "Kamis",
+        "Jumat",
+        "Sabtu",
+      ];
       const dayName = days[now.getDay()];
-      
-      const day = String(now.getDate()).padStart(2, '0');
-      const month = String(now.getMonth() + 1).padStart(2, '0');
+
+      const day = String(now.getDate()).padStart(2, "0");
+      const month = String(now.getMonth() + 1).padStart(2, "0");
       const year = now.getFullYear();
-      
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      
+
+      const hours = String(now.getHours()).padStart(2, "0");
+      const minutes = String(now.getMinutes()).padStart(2, "0");
+      const seconds = String(now.getSeconds()).padStart(2, "0");
+
       setDateStr(`${dayName}, ${day}/${month}/${year}`);
       setTimeStr(`${hours}:${minutes}:${seconds}`);
     };
-    
+
     updateTime();
     const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
   }, []);
-  
+
   // Auth & Profile States
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [loginName, setLoginName] = useState('');
-  const [loginPhoto, setLoginPhoto] = useState('');
-  const [loginCover, setLoginCover] = useState('');
-  const [loginMode, setLoginMode] = useState<'login' | 'register'>('login');
+  const [loginError, setLoginError] = useState("");
+  const [loginName, setLoginName] = useState("");
+  const [loginPhoto, setLoginPhoto] = useState("");
+  const [loginCover, setLoginCover] = useState("");
+  const [loginMode, setLoginMode] = useState<"login" | "register">("login");
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(true);
 
-  const [userProfile, setUserProfile] = useState<{ displayName: string, email: string, photoURL: string, coverUrl: string, notificationsEnabled?: boolean, temperatureUnit?: 'C' | 'F', voltageUnit?: 'V' | 'mV' } | null>(() => {
-     const saved = localStorage.getItem('userProfile');
-     return saved ? JSON.parse(saved) : null;
+  const [userProfile, setUserProfile] = useState<{
+    displayName: string;
+    email: string;
+    photoURL: string;
+    coverUrl: string;
+    notificationsEnabled?: boolean;
+    temperatureUnit?: "C" | "F";
+    voltageUnit?: "V" | "mV";
+  } | null>(() => {
+    const saved = localStorage.getItem("userProfile");
+    return saved ? JSON.parse(saved) : null;
   });
 
   useEffect(() => {
@@ -283,40 +789,43 @@ export default function App() {
   }, [isDemoMode, userProfile]);
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editPhotoUrl, setEditPhotoUrl] = useState('');
-  const [editCoverUrl, setEditCoverUrl] = useState('');
-  const [editNotificationsEnabled, setEditNotificationsEnabled] = useState(true);
-  const [editTemperatureUnit, setEditTemperatureUnit] = useState<'C' | 'F'>('C');
-  const [editVoltageUnit, setEditVoltageUnit] = useState<'V' | 'mV'>('V');
+  const [editName, setEditName] = useState("");
+  const [editPhotoUrl, setEditPhotoUrl] = useState("");
+  const [editCoverUrl, setEditCoverUrl] = useState("");
+  const [editNotificationsEnabled, setEditNotificationsEnabled] =
+    useState(true);
+  const [editTemperatureUnit, setEditTemperatureUnit] = useState<"C" | "F">(
+    "C",
+  );
+  const [editVoltageUnit, setEditVoltageUnit] = useState<"V" | "mV">("V");
 
   const handleSaveProfile = async () => {
     if (!userProfile) return;
     const updatedProfile = {
-        ...userProfile,
-        displayName: editName,
-        photoURL: editPhotoUrl,
-        coverUrl: editCoverUrl,
-        notificationsEnabled: editNotificationsEnabled,
-        temperatureUnit: editTemperatureUnit,
-        voltageUnit: editVoltageUnit
+      ...userProfile,
+      displayName: editName,
+      photoURL: editPhotoUrl,
+      coverUrl: editCoverUrl,
+      notificationsEnabled: editNotificationsEnabled,
+      temperatureUnit: editTemperatureUnit,
+      voltageUnit: editVoltageUnit,
     };
     setUserProfile(updatedProfile);
-    localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
+    localStorage.setItem("userProfile", JSON.stringify(updatedProfile));
     setIsEditingProfile(false);
 
     if (SCRIPT_URL) {
       try {
         await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
-            action: 'updateProfile',
+            action: "updateProfile",
             email: userProfile.email,
             displayName: editName,
             photoURL: editPhotoUrl,
-            coverUrl: editCoverUrl
-          })
+            coverUrl: editCoverUrl,
+          }),
         });
       } catch (e) {
         console.error("Gagal update profile server", e);
@@ -326,208 +835,310 @@ export default function App() {
 
   const handleOpenEditProfile = () => {
     if (!userProfile) return;
-    setEditName(userProfile.displayName || '');
-    setEditPhotoUrl(userProfile.photoURL || '');
-    setEditCoverUrl(userProfile.coverUrl || '');
+    setEditName(userProfile.displayName || "");
+    setEditPhotoUrl(userProfile.photoURL || "");
+    setEditCoverUrl(userProfile.coverUrl || "");
     setEditNotificationsEnabled(userProfile.notificationsEnabled ?? true);
-    setEditTemperatureUnit(userProfile.temperatureUnit || 'C');
-    setEditVoltageUnit(userProfile.voltageUnit || 'V');
+    setEditTemperatureUnit(userProfile.temperatureUnit || "C");
+    setEditVoltageUnit(userProfile.voltageUnit || "V");
     setIsEditingProfile(true);
   };
 
   // Data States
-  const [nodeA, setNodeA] = useState(() => {
-    if (isDemoMode) return { uv365: 142, online: true, battery: 85, voltage: 13.6, led: true };
-    try {
-      const saved = localStorage.getItem('nodeA_asli');
-      if (saved) return JSON.parse(saved);
-    } catch(e) {}
-    return { uv365: 0, online: false, battery: 0, voltage: 0, led: false };
-  });
-  const [nodeB, setNodeB] = useState(() => {
-    if (isDemoMode) return { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true };
-    try {
-      const saved = localStorage.getItem('nodeB_asli');
-      if (saved) return JSON.parse(saved);
-    } catch(e) {}
-    return { uv395: 0, online: false, battery: 0, voltage: 0, led: false };
-  });
-  const [logs, setLogs] = useState<any[]>(() => {
-    if (isDemoMode) return [];
-    try {
-      const saved = localStorage.getItem('logs_asli');
-      if (saved) return JSON.parse(saved);
-    } catch(e) {}
-    return [];
-  });
+  const [nodeA, setNodeA] = useState(() =>
+    isDemoMode
+      ? { uv365: 142, online: true, battery: 85, voltage: 13.6, led: true }
+      : { uv365: 0, online: false, battery: 0, voltage: 0, led: false },
+  );
+  const [nodeB, setNodeB] = useState(() =>
+    isDemoMode
+      ? { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true }
+      : { uv395: 0, online: false, battery: 0, voltage: 0, led: false },
+  );
+  const [logs, setLogs] = useState<any[]>([]);
   const [logCurrentPage, setLogCurrentPage] = useState(1);
   const logsPerPage = 10;
 
   // Logs Filter State
-  const [filterSource, setFilterSource] = useState('all');
-  const [filterStartDate, setFilterStartDate] = useState('');
-  const [filterEndDate, setFilterEndDate] = useState('');
+  const [filterSource, setFilterSource] = useState("all");
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
 
   const filteredLogs = React.useMemo(() => {
-      return logs.filter(log => {
-          // Source filter
-          const sourceStr = log.source || log.node;
-          if (filterSource !== 'all' && sourceStr !== filterSource) return false;
-          
-          // Date range filter
-          const logDate = safeParseDate(log.timestamp || log.id);
-          // Set to beginning of the day for accurate comparison
-          logDate.setHours(0, 0, 0, 0);
+    return logs.filter((log) => {
+      // Source filter
+      if (filterSource !== "all" && log.source !== filterSource) return false;
 
-          if (filterStartDate) {
-              const startDate = new Date(filterStartDate);
-              startDate.setHours(0, 0, 0, 0);
-              if (logDate < startDate) return false;
-          }
+      // Date range filter
+      const logDate = safeParseDate(log.timestamp || log.id);
+      // Set to beginning of the day for accurate comparison
+      logDate.setHours(0, 0, 0, 0);
 
-          if (filterEndDate) {
-              const endDate = new Date(filterEndDate);
-              endDate.setHours(0, 0, 0, 0);
-              if (logDate > endDate) return false;
-          }
+      if (filterStartDate) {
+        const startDate = new Date(filterStartDate);
+        startDate.setHours(0, 0, 0, 0);
+        if (logDate < startDate) return false;
+      }
 
-          return true;
-      });
+      if (filterEndDate) {
+        const endDate = new Date(filterEndDate);
+        endDate.setHours(0, 0, 0, 0);
+        if (logDate > endDate) return false;
+      }
+
+      return true;
+    });
   }, [logs, filterSource, filterStartDate, filterEndDate]);
 
   // Reset page to 1 when filters change
   useEffect(() => {
-      setLogCurrentPage(1);
+    setLogCurrentPage(1);
   }, [filterSource, filterStartDate, filterEndDate]);
 
   const totalLogPages = Math.ceil(filteredLogs.length / logsPerPage);
   const paginatedLogs = filteredLogs.slice(
-      (logCurrentPage - 1) * logsPerPage,
-      logCurrentPage * logsPerPage
+    (logCurrentPage - 1) * logsPerPage,
+    logCurrentPage * logsPerPage,
   );
 
   // Chart Data
   const [chartData, setChartData] = useState<any[]>([]);
 
-  // Manual Inputs
-  const [manual365, setManual365] = useState('');
-  const [manual395, setManual395] = useState('');
-  const [evaluation, setEvaluation] = useState<{ err365: number, err395: number } | null>(null);
-  
-  const [espTargetNode, setEspTargetNode] = useState<'A' | 'B'>(() => {
-    return (localStorage.getItem('espTargetNode') as 'A' | 'B') || 'A';
+  const [espTargetNode, setEspTargetNode] = useState<"A" | "B">(() => {
+    return (localStorage.getItem("espTargetNode") as "A" | "B") || "A";
   });
   const espTargetNodeRef = React.useRef(espTargetNode);
+  const mqttClientRef = React.useRef<ReturnType<typeof mqtt.connect> | null>(null);
   useEffect(() => {
     espTargetNodeRef.current = espTargetNode;
   }, [espTargetNode]);
+  const [chartIntervalAsli, setChartIntervalAsli] = useState<number>(60);
 
-  const fetchDataFromGoogleSheets = async (silent = false) => {
-     if (!SCRIPT_URL || isDemoMode) {
-         if (isDemoMode && !silent) alert("Anda sedang di Mode Demo. Penarikan data (fetch) hanya berlaku untuk Mode Asli.");
-         return;
-     }
-     if (!silent) setIsSyncingSheet(true);
-     try {
-       const res = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'fetchData', isDemoMode: false, email: userProfile?.email })
-       });
-       const result = await res.json();
-       if (result.status === 'success' && result.data) {
-           if (result.data.nodeA) setNodeA(result.data.nodeA);
-           if (result.data.nodeB) setNodeB(result.data.nodeB);
-           if (result.data.logs) setLogs(result.data.logs);
-           if (!silent) alert("Data berhasil ditarik dari Google Sheets!");
-       } else if (!silent && result.message && result.message.includes("No valid action")) {
-           alert("GAGAL: Anda perlu menambahkan blok if (data.action === 'fetchData') di code.gs Google Apps Script Anda untuk melayani penarikan data.");
-       } else {
-           if (!silent) alert("Gagal menarik data: " + (result.message || "Pastikan script backend mendukung 'fetchData'"));
-       }
-     } catch (err) {
-       if (!silent) alert("Error menarik data. Pastikan Google Apps Script mendukung action: 'fetchData'. " + err);
-     } finally {
-       if (!silent) setIsSyncingSheet(false);
-     }
-  };
-
-  // Auto fetch on boot for Mode Asli
-  useEffect(() => {
-    if (!isDemoMode && userProfile) {
-       fetchDataFromGoogleSheets(true);
-    }
-  }, [isDemoMode, userProfile]);
-
-  const resetTangkapan = async (node: 'A' | 'B', resetDatabase: boolean) => {
-    const confirmationMsg = resetDatabase 
-       ? `Yakin ingin mereset total tangkapan dan log di Node ${node} SECARA LOKAL DAN DI DATABASE GOOGLE SHEETS?`
-       : `Yakin ingin mereset total tangkapan dan log di Node ${node} HANYA di perangkat ini (Web Lokal)?`;
-       
-    if (window.confirm(confirmationMsg)) {
-      const nextA = node === 'A' ? { ...nodeA, uv365: 0 } : nodeA;
-      const nextB = node === 'B' ? { ...nodeB, uv395: 0 } : nodeB;
-      const nextLogs = logs.filter(log => !(log.source || log.node).includes(node));
-      
-      setNodeA(nextA);
-      setNodeB(nextB);
-      setLogs(nextLogs);
-      
-      if (resetDatabase && SCRIPT_URL && !isDemoMode) {
-          try {
-              await fetch(SCRIPT_URL, {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                 body: JSON.stringify({
-                    action: 'syncData',
-                    logs: nextLogs,
-                    nodeA: nextA,
-                    nodeB: nextB,
-                    chartData: dataRef.current.chartData, 
-                    email: userProfile?.email,
-                    isDemoMode: isDemoMode
-                 })
-              });
-              alert('Data berhasil di-reset dan disinkronkan ke Database.');
-          } catch(err) {
-              alert('Gagal mensinkronisasi reset ke database. ' + err);
-          }
-      }
-    }
-  };
+  // Manual Inputs
+  const [manual365, setManual365] = useState("");
+  const [manual395, setManual395] = useState("");
+  const [evaluation, setEvaluation] = useState<{
+    err365: number;
+    err395: number;
+  } | null>(null);
 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const prevOnlineRef = React.useRef({ A: isDemoMode ? true : false, B: isDemoMode ? true : false });
+  const prevOnlineRef = React.useRef({
+    A: isDemoMode ? true : false,
+    B: isDemoMode ? true : false,
+  });
 
-  const dataRef = React.useRef({ logs, nodeA, nodeB, chartData });
+  // HEARTBEAT TIMERS — Node dianggap offline jika 30 detik tidak ada data
+  const heartbeatRef = React.useRef<{ A: number; B: number }>({
+    A: Date.now(),
+    B: Date.now(),
+  });
+  const HEARTBEAT_TIMEOUT = 15000; // 15 detik — kurang dari 2x interval baterai Wemos (10 detik)
+
+  // 2. Listener Real-Time MQTT dari Wemos D1 Mini
   useEffect(() => {
-    dataRef.current = { logs, nodeA, nodeB, chartData };
-  }, [logs, nodeA, nodeB, chartData]);
+    if (isDemoMode) return;
+
+    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+    mqttClientRef.current = client;
+
+    client.on("connect", () => {
+      console.log("✅ Terhubung ke MQTT Broker HiveMQ");
+      client.subscribe("dashboard/ngengat/deteksi");
+      client.subscribe("dashboard/ngengat/baterai");
+      client.subscribe("dashboard/ngengat/lingkungan");
+    });
+
+    client.on("message", (topic, message) => {
+      try {
+        const payloadStr = message.toString();
+        const payload = JSON.parse(payloadStr);
+
+        if (topic === "dashboard/ngengat/deteksi") {
+          const nodeFromPayload =
+            payload.node === "A" || payload.node === "B"
+              ? payload.node
+              : espTargetNodeRef.current;
+
+          heartbeatRef.current[nodeFromPayload === "A" ? "A" : "B"] =
+            Date.now();
+
+          // Deteksi data dari buffer offline (payload.buffered === true)
+          if (payload.buffered === true) {
+            const ref = bufferFlushRef.current;
+            if (nodeFromPayload === "A") ref.countA++;
+            else ref.countB++;
+            if (ref.timer) clearTimeout(ref.timer);
+            ref.timer = setTimeout(() => {
+              const totalA = ref.countA;
+              const totalB = ref.countB;
+              const parts: string[] = [];
+              if (totalA > 0) parts.push(`${totalA} data Node A`);
+              if (totalB > 0) parts.push(`${totalB} data Node B`);
+              if (parts.length > 0) {
+                setBufferToast({
+                  id: Date.now(),
+                  count: totalA + totalB,
+                  node: parts.join(" + "),
+                });
+                setTimeout(() => setBufferToast(null), 5000);
+              }
+              ref.countA = 0;
+              ref.countB = 0;
+              ref.timer = null;
+              // Picu auto-sync agar data buffer langsung tersimpan ke Google Sheet
+              setBufferFlushSignal((s) => s + 1);
+            }, 400);
+          }
+
+          if (nodeFromPayload === "A") {
+            setNodeA((prev) => ({
+              ...prev,
+              uv365: prev.uv365 + 1,
+              online: true,
+            }));
+            setLogs((prevLogs) =>
+              [
+                {
+                  id: Date.now() + Math.random().toString(36).substr(2, 9),
+                  timestamp: payload.ts ? payload.ts * 1000 : Date.now(),
+                  source: "Node A (UV 365 nm)",
+                  action: payload.buffered
+                    ? "IR Terpicu (+1) [Buffer]"
+                    : "IR Terpicu (+1)",
+                },
+                ...prevLogs,
+              ].slice(0, 100),
+            );
+          } else {
+            setNodeB((prev) => ({
+              ...prev,
+              uv395: prev.uv395 + 1,
+              online: true,
+            }));
+            setLogs((prevLogs) =>
+              [
+                {
+                  id: Date.now() + Math.random().toString(36).substr(2, 9),
+                  timestamp: payload.ts ? payload.ts * 1000 : Date.now(),
+                  source: "Node B (UV 395 nm)",
+                  action: payload.buffered
+                    ? "IR Terpicu (+1) [Buffer]"
+                    : "IR Terpicu (+1)",
+                },
+                ...prevLogs,
+              ].slice(0, 100),
+            );
+          }
+        } else if (topic === "dashboard/ngengat/baterai") {
+          // Jika data baterai berasal dari buffer dan fitur buffer baterai dinonaktifkan, abaikan
+          if (payload.buffered === true && !bufferBatteryEnabledRef.current) return;
+
+          const nodeKey = payload.node === "B" ? "B" : "A";
+          heartbeatRef.current[nodeKey] = Date.now();
+
+          const batteryData = {
+            battery: Math.round(payload.percentage),
+            voltage: Number(parseFloat(payload.voltage).toFixed(2)),
+            online: true,
+            ...(payload.relay !== undefined && { led: payload.relay }),
+          };
+          if (payload.node === "B") {
+            setNodeB((prev) => ({ ...prev, ...batteryData }));
+          } else {
+            setNodeA((prev) => ({ ...prev, ...batteryData }));
+          }
+        } else if (topic === "dashboard/ngengat/lingkungan") {
+          // DHT22 — Suhu & Kelembaban
+          const nodeKey = payload.node === "B" ? "B" : "A";
+          heartbeatRef.current[nodeKey] = Date.now();
+
+          const temp = Number(parseFloat(payload.temp).toFixed(1));
+          const humidity = Number(parseFloat(payload.humidity).toFixed(1));
+          const now = Date.now();
+
+          setDhtData((prev) => ({
+            ...prev,
+            [nodeKey]: { temp, humidity, timestamp: now },
+          }));
+
+          // Simpan ke riwayat untuk sinkronisasi ke Google Sheet
+          setDhtHistory((prev) =>
+            [...prev, { timestamp: now, node: nodeKey, temp, humidity }].slice(-200),
+          );
+
+          setDhtHistoryAll((prev) =>
+            [...prev, { timestamp: now, node: nodeKey, temp, humidity }],
+          );
+        }
+      } catch (err) {
+        console.error("Gagal parsing MQTT:", err);
+      }
+    });
+
+    client.on("offline", () => {
+      console.log("❌ Terputus dari MQTT Broker (WebSocket)");
+      setNodeA((prev) => ({ ...prev, online: false }));
+      setNodeB((prev) => ({ ...prev, online: false }));
+    });
+
+    return () => {
+      mqttClientRef.current = null;
+      client.end();
+    };
+  }, [isDemoMode]);
+
+  // HEARTBEAT CHECK — Jalankan tiap 5 detik untuk deteksi node offline
+  useEffect(() => {
+    if (isDemoMode) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+
+      if (now - heartbeatRef.current.A > HEARTBEAT_TIMEOUT) {
+        setNodeA((prev) =>
+          prev.online !== false ? { ...prev, online: false } : prev,
+        );
+      }
+      if (now - heartbeatRef.current.B > HEARTBEAT_TIMEOUT) {
+        setNodeB((prev) =>
+          prev.online !== false ? { ...prev, online: false } : prev,
+        );
+      }
+    }, 3000); // cek tiap 3 detik
+
+    return () => clearInterval(interval);
+  }, [isDemoMode]);
 
   // Auto-sync ke Google Sheets setiap 5 menit
   useEffect(() => {
     if (!userProfile || !SCRIPT_URL) return;
 
-    const syncInterval = setInterval(async () => {
-      try {
-        await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'syncData',
-            logs: dataRef.current.logs,
-            nodeA: dataRef.current.nodeA,
-            nodeB: dataRef.current.nodeB,
-            chartData: dataRef.current.chartData,
-            email: userProfile.email,
-            isDemoMode: isDemoMode
-          })
-        });
-        console.log("Auto-sync success");
-      } catch (e) {
-        console.error("Auto-sync failed:", e);
-      }
-    }, 5 * 60 * 1000); // 5 menit
+    const syncInterval = setInterval(
+      async () => {
+        try {
+          await fetch(SCRIPT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "syncData",
+              logs: dataRef.current.logs,
+              nodeA: dataRef.current.nodeA,
+              nodeB: dataRef.current.nodeB,
+              chartData: dataRef.current.chartData,
+              effectChartData: dataRef.current.effectChartData,
+              lingkunganData: dataRef.current.dhtHistory,
+              email: userProfile.email,
+              isDemoMode: isDemoMode,
+            }),
+          });
+          console.log("Auto-sync success");
+        } catch (e) {
+          console.error("Auto-sync failed:", e);
+        }
+      },
+      5 * 60 * 1000,
+    ); // 5 menit
 
     return () => clearInterval(syncInterval);
   }, [userProfile, isDemoMode]);
@@ -536,493 +1147,753 @@ export default function App() {
     prevOnlineRef.current = { A: nodeA.online, B: nodeB.online };
   }, [nodeA.online, nodeB.online]);
 
-  // --- KONEKSI MQTT (Mode Asli) ---
-  useEffect(() => {
-    if (isDemoMode) return;
-
-    // Koneksi ke public broker (karena berjalan di web/browser harus via WSS/WebSockets)
-    const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
-      clientId: `dashboard_web_${Math.random().toString(16).slice(3)}`,
-      keepalive: 60,
-      protocolId: 'MQTT',
-      protocolVersion: 4,
-      clean: true,
-      reconnectPeriod: 5000, 
-    });
-
-    mqttClient.on('connect', () => {
-      console.log('Terhubung ke MQTT Broker!');
-      // Subscribe ke topik yang digunakan oleh ESP8266
-      mqttClient.subscribe('dashboard/ngengat/deteksi');
-      mqttClient.subscribe('dashboard/ngengat/baterai');
-      
-      // Update status menjadi online saat broker terhubung
-      setNodeA(prev => ({ ...prev, online: true }));
-      // Asumsi nodeB off jika hanya ada 1 esp8266
-    });
-
-    mqttClient.on('error', (err: any) => {
-      // Abaikan error "client disconnecting" yang muncul akibat React Strict Mode me-restart useEffect dengan cepat
-      if (err && err.message && err.message.includes('client disconnecting')) {
-         return;
-      }
-      console.error('Koneksi MQTT error:', err);
-    });
-
-    mqttClient.on('message', (topic, message) => {
-      const payloadStr = message.toString();
-      console.log(`Pesan MQTT masuk [${topic}]:`, payloadStr);
-      
-      try {
-        const data = JSON.parse(payloadStr);
-
-        if (topic === 'dashboard/ngengat/deteksi') {
-          // Arahkan tangkapan sesuai settingan target node saat ini
-          const target = espTargetNodeRef.current;
-          if (target === 'A') {
-             setNodeA(prev => ({ ...prev, uv365: prev.uv365 + 1, online: true }));
-             const newLog = {
-               id: Date.now() + Math.random().toString(36).substr(2, 9),
-               timestamp: Date.now(),
-               source: 'Node A (UV 365 nm)',
-               action: 'IR Terpicu (+1)'
-             };
-             setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 100)); // limit 100
-             
-             // Auto push ke DB Asli setelah 2 detik
-             if (SCRIPT_URL) {
-                 setTimeout(() => {
-                     fetch(SCRIPT_URL, {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                       body: JSON.stringify({
-                         action: 'syncData',
-                         logs: dataRef.current.logs,
-                         nodeA: dataRef.current.nodeA,
-                         nodeB: dataRef.current.nodeB,
-                         chartData: dataRef.current.chartData,
-                         isDemoMode: false,
-                         email: userProfile?.email
-                       })
-                     }).catch(() => {});
-                 }, 2000);
-             }
-          } else {
-             setNodeB(prev => ({ ...prev, uv395: prev.uv395 + 1, online: true }));
-             const newLog = {
-               id: Date.now() + Math.random().toString(36).substr(2, 9),
-               timestamp: Date.now(),
-               source: 'Node B (UV 395 nm)',
-               action: 'IR Terpicu (+1)'
-             };
-             setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 100));
-             
-             // Auto push ke DB Asli setelah 2 detik
-             if (SCRIPT_URL) {
-                 setTimeout(() => {
-                     fetch(SCRIPT_URL, {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                       body: JSON.stringify({
-                         action: 'syncData',
-                         logs: dataRef.current.logs,
-                         nodeA: dataRef.current.nodeA,
-                         nodeB: dataRef.current.nodeB,
-                         chartData: dataRef.current.chartData,
-                         isDemoMode: false,
-                         email: userProfile?.email
-                       })
-                     }).catch(() => {});
-                 }, 2000);
-             }
-          }
-        } 
-        else if (topic === 'dashboard/ngengat/baterai') {
-           const target = espTargetNodeRef.current;
-           if (data.voltage) {
-             const updateObj = { 
-               voltage: parseFloat(data.voltage.toFixed(2)), 
-               battery: Math.round(data.percentage),
-               online: true
-             };
-             if (target === 'A') {
-                setNodeA(prev => ({ ...prev, ...updateObj }));
-             } else {
-                setNodeB(prev => ({ ...prev, ...updateObj }));
-             }
-           }
-        }
-      } catch (err) {
-        console.error("Gagal parse pesan MQTT:", err);
-      }
-    });
-
-    return () => {
-      mqttClient.end();
-    };
-  }, [isDemoMode]);
-
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
   useEffect(() => {
     const applyTheme = () => {
-      if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        document.documentElement.classList.add('dark');
+      if (
+        theme === "dark" ||
+        (theme === "system" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches)
+      ) {
+        document.documentElement.classList.add("dark");
       } else {
-        document.documentElement.classList.remove('dark');
+        document.documentElement.classList.remove("dark");
       }
     };
     applyTheme();
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
-    return () => window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', applyTheme);
+    window
+      .matchMedia("(prefers-color-scheme: dark)")
+      .addEventListener("change", applyTheme);
+    return () =>
+      window
+        .matchMedia("(prefers-color-scheme: dark)")
+        .removeEventListener("change", applyTheme);
   }, [theme]);
 
   // Chart Time Range State
-  const [timeRange, setTimeRange] = useState<'hari' | 'minggu' | 'bulan' | 'tahun'>('hari');
-  const [timeDuration, setTimeDuration] = useState<string>('hari_ini');
-  const [chartIntervalAsli, setChartIntervalAsli] = useState<number>(60); // in minutes
+  const [timeRange, setTimeRange] = useState<
+    "hari" | "minggu" | "bulan" | "tahun"
+  >("hari");
+  const [timeDuration, setTimeDuration] = useState<string>("hari_ini");
 
   // Effect Chart Time Range State
-  const [effectTimeRange, setEffectTimeRange] = useState<'hari' | 'minggu' | 'bulan' | 'tahun'>('hari');
-  const [effectTimeDuration, setEffectTimeDuration] = useState<string>('hari_ini');
-  const [effectViewMode, setEffectViewMode] = useState<'total' | 'rata-rata'>('total');
-  const [effectChartData, setEffectChartData] = useState<{NodeA: number, NodeB: number}>({NodeA: 0, NodeB: 0});
+  const [effectTimeRange, setEffectTimeRange] = useState<
+    "hari" | "minggu" | "bulan" | "tahun"
+  >("hari");
+  const [effectTimeDuration, setEffectTimeDuration] =
+    useState<string>("hari_ini");
+  const [effectViewMode, setEffectViewMode] = useState<"total" | "rata-rata">(
+    "total",
+  );
+  const [effectChartData, setEffectChartData] = useState<{
+    NodeA: number;
+    NodeB: number;
+  }>({ NodeA: 0, NodeB: 0 });
 
-
-  // Mode Asli Storage Sync
+  // Data ref untuk menyimpan state terbaru untuk sync
+  const dataRef = React.useRef({
+    logs,
+    nodeA,
+    nodeB,
+    chartData,
+    effectChartData,
+    dhtHistory,
+  });
   useEffect(() => {
-    if (!isDemoMode && userProfile) {
-      localStorage.setItem('logs_asli', JSON.stringify(logs));
-      localStorage.setItem('nodeA_asli', JSON.stringify(nodeA));
-      localStorage.setItem('nodeB_asli', JSON.stringify(nodeB));
+    dataRef.current = { logs, nodeA, nodeB, chartData, effectChartData, dhtHistory };
+  }, [logs, nodeA, nodeB, chartData, effectChartData, dhtHistory]);
+
+  // Auto-sync setelah data buffer IR tiba — pastikan semua data masuk ke Sheet
+  useEffect(() => {
+    if (bufferFlushSignal === 0) return;
+    if (!userProfile || !SCRIPT_URL || isDemoMode) return;
+
+    const timer = setTimeout(() => {
+      fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "syncData",
+          logs: dataRef.current.logs,
+          nodeA: dataRef.current.nodeA,
+          nodeB: dataRef.current.nodeB,
+          chartData: dataRef.current.chartData,
+          effectChartData: dataRef.current.effectChartData,
+          lingkunganData: dataRef.current.dhtHistory,
+          email: userProfile.email,
+          isDemoMode: false,
+        }),
+      }).catch((e) => console.error("Buffer auto-sync failed:", e));
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [bufferFlushSignal, userProfile, isDemoMode]);
+
+  // 1. TAMBAHKAN INI: Fungsi Fetch Data awal dari Google Sheet
+  useEffect(() => {
+    // Jika mode demo atau belum login, hentikan
+    if (isDemoMode || !userProfile || !SCRIPT_URL) return;
+
+    const fetchInitialData = async () => {
+      setIsDataLoading(true);
+      try {
+        const response = await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "fetchData",
+            email: userProfile.email,
+            isDemoMode: false,
+          }),
+        });
+        const result = await response.json();
+        if (result.status === "success" && result.data) {
+          // Update state dengan data dari Google Sheet
+          if (result.data.nodeA) setNodeA(result.data.nodeA);
+          if (result.data.nodeB) setNodeB(result.data.nodeB);
+          if (result.data.logs) setLogs(result.data.logs);
+          // Grafik tersimpan dari Sheet (akan disempurnakan ulang oleh efek dari logs nyata)
+          if (result.data.chartData && result.data.chartData.length > 0) {
+            setChartData(result.data.chartData);
+          }
+          if (result.data.effectChartData) {
+            setEffectChartData(result.data.effectChartData);
+          }
+          if (result.data.lingkunganHistory && result.data.lingkunganHistory.length > 0) {
+            setDhtHistoryAll(result.data.lingkunganHistory);
+          }
+        }
+      } catch (e) {
+        console.error("Gagal menarik data dari server:", e);
+      } finally {
+        setIsDataLoading(false);
+      }
+    };
+
+    fetchInitialData();
+  }, [userProfile, isDemoMode]);
+
+  // Offline Simulation Initial Data
+  useEffect(() => {
+    if (!isDemoMode || !userProfile) {
+      setLogs([]);
+      setNodeA({ uv365: 0, online: false, battery: 0, voltage: 0, led: false });
+      setNodeB({ uv395: 0, online: false, battery: 0, voltage: 0, led: false });
+      setDhtData({ A: null, B: null });
+      setDhtHistoryAll([]);
+      return;
     }
-  }, [logs, nodeA, nodeB, isDemoMode, userProfile]);
 
-  // Offline Simulation & Data Loading Initial Data
-  useEffect(() => {
-    if (!userProfile) return;
-    if (!isDemoMode) return;
-    
-    // We only set demo mock data if in demo mode and logs array is empty
-    if (logs.length > 0) return;
+    // Demo DHT22 — data historis 30 hari agar semua rentang waktu tersedia
+    const demoDhtHistory: {
+      timestamp: number; node: string; temp: number; humidity: number;
+    }[] = [];
+    const demoBaseTime = Date.now();
+    for (let d = 29; d >= 0; d--) {
+      for (let h = 0; h < 24; h++) {
+        const ts = demoBaseTime - d * 86400000 - (23 - h) * 3600000;
+        const wave = Math.sin((h * Math.PI) / 12) * 2.5;
+        demoDhtHistory.push({
+          timestamp: ts,
+          node: "A",
+          temp: +(27.5 + wave + (Math.random() - 0.5)).toFixed(1),
+          humidity: +(72 - wave * 2 + (Math.random() - 0.5) * 3).toFixed(0),
+        });
+        demoDhtHistory.push({
+          timestamp: ts + 60000,
+          node: "B",
+          temp: +(28.3 + wave + (Math.random() - 0.5)).toFixed(1),
+          humidity: +(69 - wave * 2 + (Math.random() - 0.5) * 3).toFixed(0),
+        });
+      }
+    }
+    setDhtHistoryAll(demoDhtHistory);
+    const demoLastA = demoDhtHistory[demoDhtHistory.length - 2];
+    const demoLastB = demoDhtHistory[demoDhtHistory.length - 1];
+    setDhtData({
+      A: { temp: demoLastA.temp, humidity: demoLastA.humidity, timestamp: Date.now() },
+      B: { temp: demoLastB.temp, humidity: demoLastB.humidity, timestamp: Date.now() },
+    });
 
     let now = Date.now();
-    const mockNodeAStatus = { online: true, battery: 85, voltage: 13.6, led: true };
-    const mockNodeBStatus = { online: true, battery: 62, voltage: 13.1, led: true };
-    
+    const mockNodeAStatus = {
+      online: true,
+      battery: 85,
+      voltage: 13.6,
+      led: true,
+    };
+    const mockNodeBStatus = {
+      online: true,
+      battery: 62,
+      voltage: 13.1,
+      led: true,
+    };
+
     const initialLogs = [
-      { id: 1, timestamp: now - 30000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus },
-      { id: 2, timestamp: now - 150000, source: 'Node B (UV 395 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus },
-      { id: 3, timestamp: now - 450000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus },
-      { id: 4, timestamp: now - 900000, source: 'Node A (UV 365 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus },
-      { id: 5, timestamp: now - 1200000, source: 'Node B (UV 395 nm)', action: 'IR Terpicu (+1)', nodeAStatus: mockNodeAStatus, nodeBStatus: mockNodeBStatus }
+      {
+        id: 1,
+        timestamp: now - 30000,
+        source: "Node A (UV 365 nm)",
+        action: "IR Terpicu (+1)",
+        nodeAStatus: mockNodeAStatus,
+        nodeBStatus: mockNodeBStatus,
+      },
+      {
+        id: 2,
+        timestamp: now - 150000,
+        source: "Node B (UV 395 nm)",
+        action: "IR Terpicu (+1)",
+        nodeAStatus: mockNodeAStatus,
+        nodeBStatus: mockNodeBStatus,
+      },
+      {
+        id: 3,
+        timestamp: now - 450000,
+        source: "Node A (UV 365 nm)",
+        action: "IR Terpicu (+1)",
+        nodeAStatus: mockNodeAStatus,
+        nodeBStatus: mockNodeBStatus,
+      },
+      {
+        id: 4,
+        timestamp: now - 900000,
+        source: "Node A (UV 365 nm)",
+        action: "IR Terpicu (+1)",
+        nodeAStatus: mockNodeAStatus,
+        nodeBStatus: mockNodeBStatus,
+      },
+      {
+        id: 5,
+        timestamp: now - 1200000,
+        source: "Node B (UV 395 nm)",
+        action: "IR Terpicu (+1)",
+        nodeAStatus: mockNodeAStatus,
+        nodeBStatus: mockNodeBStatus,
+      },
     ];
     setLogs(initialLogs);
-    setNodeA({ uv365: 142, online: true, battery: 85, voltage: 13.6, led: true });
-    setNodeB({ uv395: 98, online: true, battery: 62, voltage: 13.1, led: true });
+    setNodeA({
+      uv365: 142,
+      online: true,
+      battery: 85,
+      voltage: 13.6,
+      led: true,
+    });
+    setNodeB({
+      uv395: 98,
+      online: true,
+      battery: 62,
+      voltage: 13.1,
+      led: true,
+    });
   }, [isDemoMode, userProfile]);
 
   useEffect(() => {
-    if (!isDemoMode || !userProfile) {
-      if (!isDemoMode) {
-        // Mode Asli: Generate simple chart data from local logs history
-        if (logs.length === 0) {
-           // Provide an empty chart state with at least two data points so the grid still renders
-           const currentHour = new Date().getHours();
-           const prevHour = String((currentHour - 1 + 24) % 24).padStart(2, '0');
-           const nowHour = String(currentHour).padStart(2, '0');
-           setChartData([
-               { time: `${prevHour}:00`, NodeA: 0, NodeB: 0 },
-               { time: `${nowHour}:00`, NodeA: 0, NodeB: 0 }
-           ]);
-           return;
-        }
-        const grouped: Record<string, { NodeA: number; NodeB: number }> = {};
-        const chronologicalLogs = [...logs].reverse();
-        
-        for (const log of chronologicalLogs) {
-           const logDate = safeParseDate(log.timestamp || log.id);
-           const hour = logDate.getHours();
-           const minute = logDate.getMinutes();
-           
-           // group to nearest interval
-           const intervalMin = Math.floor(minute / chartIntervalAsli) * chartIntervalAsli;
-           
-           const hourStr = String(hour).padStart(2, '0');
-           const minStr = String(intervalMin).padStart(2, '0');
-           const timeKey = `${hourStr}:${minStr}`;
-           
-           const sourceStr = log.source || log.node || '';
-           if (!grouped[timeKey]) grouped[timeKey] = { NodeA: 0, NodeB: 0 };
-           if (sourceStr.includes('A')) grouped[timeKey].NodeA++;
-           else if (sourceStr.includes('B')) grouped[timeKey].NodeB++;
-        }
-        const newChartData = Object.keys(grouped).map(time => ({
-           time, NodeA: grouped[time].NodeA, NodeB: grouped[time].NodeB
-        }));
-        
-        // Ensure at least 2 points for LineChart to stretch out if only 1 time range has data
-        if (newChartData.length === 1) {
-           const [hourStr, minStr] = newChartData[0].time.split(':');
-           let h = parseInt(hourStr);
-           let m = parseInt(minStr) - chartIntervalAsli;
-           if (m < 0) {
-              m += 60;
-              h = (h - 1 + 24) % 24;
-           }
-           const prevTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-           newChartData.unshift({ time: prevTime, NodeA: 0, NodeB: 0 });
-        }
-        
-        setChartData(newChartData);
-      } else {
-        setChartData([]);
-      }
+    if (!isDemoMode) return; // Mode Asli ditangani efek terpisah (dari logs nyata)
+    if (!userProfile) {
+      setChartData([]);
       return;
     }
     let labels: string[] = [];
     let dataA: number[] = [];
     let dataB: number[] = [];
 
-    if (timeRange === 'hari') {
-        const count = timeDuration === 'hari_ini' ? 1 : timeDuration === '3_hari' ? 3 : 7;
-        if (timeDuration === 'hari_ini') {
-            labels = ['18:00', '19:00', '20:00', '21:00', '22:00', '23:00', '00:00', '01:00', '02:00', '03:00', '04:00', '05:00', '06:00'];
-            dataA = [2, 15, 30, 45, 25, 10, 5, 3, 2, 1, 2, 1, 1];
-            dataB = [1, 10, 20, 32, 18, 8, 4, 2, 1, 1, 0, 1, 0];
-        } else {
-            labels = Array.from({length: count}, (_, i) => `H-${count - 1 - i}`);
-            dataA = Array.from({length: labels.length}, () => Math.floor(Math.random() * 80) + 20);
-            dataB = Array.from({length: labels.length}, () => Math.floor(Math.random() * 50) + 10);
-        }
-    } else if (timeRange === 'minggu') {
-        const count = timeDuration === 'minggu_ini' ? 1 : timeDuration === '4_minggu' ? 4 : 7;
-        if (timeDuration === 'minggu_ini') {
-            labels = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-            dataA = [120, 150, 100, 180, 142, 130, 160];
-            dataB = [80, 95, 70, 110, 98, 85, 105];
-        } else {
-            labels = Array.from({length: count}, (_, i) => `Minggu ke-${count - i}`);
-            dataA = Array.from({length: labels.length}, () => Math.floor(Math.random() * 800) + 100);
-            dataB = Array.from({length: labels.length}, () => Math.floor(Math.random() * 500) + 80);
-        }
-    } else if (timeRange === 'bulan') {
-        const count = timeDuration === 'bulan_ini' ? 1 : timeDuration === '3_bulan' ? 3 : 6;
-        if (timeDuration === 'bulan_ini') {
-            labels = ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'];
-            dataA = [500, 600, 550, 620];
-            dataB = [350, 400, 380, 450];
-        } else {
-            labels = Array.from({length: count}, (_, i) => `Bulan ke-${count - i}`);
-            dataA = Array.from({length: labels.length}, () => Math.floor(Math.random() * 2500) + 500);
-            dataB = Array.from({length: labels.length}, () => Math.floor(Math.random() * 1800) + 300);
-        }
-    } else if (timeRange === 'tahun') {
-        const count = timeDuration === 'tahun_ini' ? 1 : timeDuration === '2_tahun' ? 2 : 5;
-        if (timeDuration === 'tahun_ini') {
-            labels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
-            dataA = [1000, 1200, 1500, 2000, 2500, 3000, 2800, 2000, 1800, 1500, 1200, 1100];
-            dataB = [800, 900, 1100, 1400, 1800, 2200, 2000, 1500, 1300, 1100, 900, 850];
-        } else {
-            const currentYear = new Date().getFullYear();
-            labels = Array.from({length: count}, (_, i) => `${currentYear - (count - 1 - i)}`);
-            dataA = Array.from({length: labels.length}, () => Math.floor(Math.random() * 25000) + 5000);
-            dataB = Array.from({length: labels.length}, () => Math.floor(Math.random() * 18000) + 3000);
-        }
+    if (timeRange === "hari") {
+      const count =
+        timeDuration === "hari_ini" ? 1 : timeDuration === "3_hari" ? 3 : 7;
+      if (timeDuration === "hari_ini") {
+        labels = [
+          "18:00",
+          "19:00",
+          "20:00",
+          "21:00",
+          "22:00",
+          "23:00",
+          "00:00",
+          "01:00",
+          "02:00",
+          "03:00",
+          "04:00",
+          "05:00",
+          "06:00",
+        ];
+        dataA = [2, 15, 30, 45, 25, 10, 5, 3, 2, 1, 2, 1, 1];
+        dataB = [1, 10, 20, 32, 18, 8, 4, 2, 1, 1, 0, 1, 0];
+      } else {
+        labels = Array.from({ length: count }, (_, i) => `H-${count - 1 - i}`);
+        dataA = Array.from(
+          { length: labels.length },
+          () => Math.floor(Math.random() * 80) + 20,
+        );
+        dataB = Array.from(
+          { length: labels.length },
+          () => Math.floor(Math.random() * 50) + 10,
+        );
+      }
+    } else if (timeRange === "minggu") {
+      const count =
+        timeDuration === "minggu_ini" ? 1 : timeDuration === "4_minggu" ? 4 : 7;
+      if (timeDuration === "minggu_ini") {
+        labels = [
+          "Senin",
+          "Selasa",
+          "Rabu",
+          "Kamis",
+          "Jumat",
+          "Sabtu",
+          "Minggu",
+        ];
+        dataA = [120, 150, 100, 180, 142, 130, 160];
+        dataB = [80, 95, 70, 110, 98, 85, 105];
+      } else {
+        labels = Array.from(
+          { length: count },
+          (_, i) => `Minggu ke-${count - i}`,
+        );
+        dataA = Array.from(
+          { length: labels.length },
+          () => Math.floor(Math.random() * 800) + 100,
+        );
+        dataB = Array.from(
+          { length: labels.length },
+          () => Math.floor(Math.random() * 500) + 80,
+        );
+      }
+    } else if (timeRange === "bulan") {
+      const count =
+        timeDuration === "bulan_ini" ? 1 : timeDuration === "3_bulan" ? 3 : 6;
+      if (timeDuration === "bulan_ini") {
+        labels = ["Minggu 1", "Minggu 2", "Minggu 3", "Minggu 4"];
+        dataA = [500, 600, 550, 620];
+        dataB = [350, 400, 380, 450];
+      } else {
+        labels = Array.from(
+          { length: count },
+          (_, i) => `Bulan ke-${count - i}`,
+        );
+        dataA = Array.from(
+          { length: labels.length },
+          () => Math.floor(Math.random() * 2500) + 500,
+        );
+        dataB = Array.from(
+          { length: labels.length },
+          () => Math.floor(Math.random() * 1800) + 300,
+        );
+      }
+    } else if (timeRange === "tahun") {
+      const count =
+        timeDuration === "tahun_ini" ? 1 : timeDuration === "2_tahun" ? 2 : 5;
+      if (timeDuration === "tahun_ini") {
+        labels = [
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "Mei",
+          "Jun",
+          "Jul",
+          "Ags",
+          "Sep",
+          "Okt",
+          "Nov",
+          "Des",
+        ];
+        dataA = [
+          1000, 1200, 1500, 2000, 2500, 3000, 2800, 2000, 1800, 1500, 1200,
+          1100,
+        ];
+        dataB = [
+          800, 900, 1100, 1400, 1800, 2200, 2000, 1500, 1300, 1100, 900, 850,
+        ];
+      } else {
+        const currentYear = new Date().getFullYear();
+        labels = Array.from(
+          { length: count },
+          (_, i) => `${currentYear - (count - 1 - i)}`,
+        );
+        dataA = Array.from(
+          { length: labels.length },
+          () => Math.floor(Math.random() * 25000) + 5000,
+        );
+        dataB = Array.from(
+          { length: labels.length },
+          () => Math.floor(Math.random() * 18000) + 3000,
+        );
+      }
     }
 
     const initialChartData = labels.map((time, i) => ({
-      time, NodeA: dataA[i], NodeB: dataB[i]
+      time,
+      NodeA: dataA[i],
+      NodeB: dataB[i],
     }));
     setChartData(initialChartData);
-  }, [isDemoMode, userProfile, timeRange, timeDuration, logs, chartIntervalAsli]);
+  }, [isDemoMode, userProfile, timeRange, timeDuration]);
+
+  // MODE ASLI: bangun grafik "Fluktuasi Waktu Kedatangan" dari logs nyata
+  useEffect(() => {
+    if (isDemoMode) return; // Mode demo ditangani efek di atas
+    if (!userProfile) {
+      setChartData([]);
+      return;
+    }
+    setChartData(buildChartFromLogs(logs, timeRange, timeDuration));
+  }, [isDemoMode, userProfile, timeRange, timeDuration, logs]);
 
   useEffect(() => {
+    if (!isDemoMode) return; // Mode Asli ditangani efek terpisah (dari logs nyata)
     if (!userProfile) {
-      setEffectChartData({NodeA: 0, NodeB: 0});
+      setEffectChartData({ NodeA: 0, NodeB: 0 });
       return;
     }
-    
-    // Fallback for real mode when using purely local storage for "Hari/Minggu" options
-    // In a real app we'd filter the 'logs', but here we can just show total since 
-    // local logs might not go back months/years unless we store them. 
-    // For "total" mode we use the total accumulated nodeA.uv365 / nodeB.uv395.
-    if (!isDemoMode) {
-      // Simplification: In Real mode, just use the sum of active logs for 'hari_ini' 
-      // or total UV counts. To make it simple for the UI, we'll try to filter logs.
-      let sumA = 0;
-      let sumB = 0;
-      let countData = 1;
-      
-      const now = new Date();
-      let threshold = new Date(0); // all time by default
-      if (effectTimeRange === 'hari') {
-          threshold = new Date(now.getTime() - (effectTimeDuration === 'hari_ini' ? 1 : effectTimeDuration === '3_hari' ? 3 : 7) * 24 * 60 * 60 * 1000);
-          countData = effectTimeDuration === 'hari_ini' ? 1 : effectTimeDuration === '3_hari' ? 3 : 7;
-      } else if (effectTimeRange === 'minggu') {
-          threshold = new Date(now.getTime() - (effectTimeDuration === 'minggu_ini' ? 1 : effectTimeDuration === '4_minggu' ? 4 : 7) * 7 * 24 * 60 * 60 * 1000);
-          countData = effectTimeDuration === 'minggu_ini' ? 1 : effectTimeDuration === '4_minggu' ? 4 : 7;
-      } else if (effectTimeRange === 'bulan') {
-          const mths = effectTimeDuration === 'bulan_ini' ? 1 : effectTimeDuration === '3_bulan' ? 3 : 6;
-          threshold = new Date(now.getFullYear(), now.getMonth() - mths, now.getDate());
-          countData = mths;
-      } else {
-          countData = 1; // arbitrary
-      }
 
-      const filtered = logs.filter(l => safeParseDate(l.timestamp || l.id) >= threshold);
-      for (const log of filtered) {
-          if ((log.source || log.node).includes('A')) sumA++;
-          else if ((log.source || log.node).includes('B')) sumB++;
-      }
-      
-      // If no logs match the timeframe but they pick Total, it might look empty.
-      // So if it's "total", we might want to just show the absolute raw node total.
-      if (effectViewMode === 'total' && effectTimeDuration === 'hari_ini') {
-         sumA = Math.max(sumA, nodeA.uv365); // Just fallback so it doesn't look empty when logs are cleared
-         sumB = Math.max(sumB, nodeB.uv395);
-      }
-      
-      if (effectViewMode === 'rata-rata') {
-          sumA = Math.floor(sumA / countData);
-          sumB = Math.floor(sumB / countData);
-      }
-      
-      setEffectChartData({NodeA: sumA, NodeB: sumB});
-      return;
-    }
-    
     let sumA = 0;
     let sumB = 0;
     let countData = 1;
-    
-    if (effectTimeRange === 'hari') {
-        const count = effectTimeDuration === 'hari_ini' ? 1 : effectTimeDuration === '3_hari' ? 3 : 7;
-        countData = count;
-        if (effectTimeDuration === 'hari_ini') {
-            sumA = 142; // Fallbacks
-            sumB = 98;
-        } else {
-            sumA = Array.from({length: count}, () => Math.floor(Math.random() * 80) + 20).reduce((a, b) => a + b, 0);
-            sumB = Array.from({length: count}, () => Math.floor(Math.random() * 50) + 10).reduce((a, b) => a + b, 0);
-        }
-    } else if (effectTimeRange === 'minggu') {
-        const count = effectTimeDuration === 'minggu_ini' ? 1 : effectTimeDuration === '4_minggu' ? 4 : 7;
-        countData = count;
-        if (effectTimeDuration === 'minggu_ini') {
-            sumA = [120, 150, 100, 180, 142, 130, 160].reduce((a, b) => a + b, 0);
-            sumB = [80, 95, 70, 110, 98, 85, 105].reduce((a, b) => a + b, 0);
-        } else {
-            sumA = Array.from({length: count}, () => Math.floor(Math.random() * 800) + 100).reduce((a, b) => a + b, 0);
-            sumB = Array.from({length: count}, () => Math.floor(Math.random() * 500) + 80).reduce((a, b) => a + b, 0);
-        }
-    } else if (effectTimeRange === 'bulan') {
-        const count = effectTimeDuration === 'bulan_ini' ? 1 : effectTimeDuration === '3_bulan' ? 3 : 6;
-        countData = count;
-        if (effectTimeDuration === 'bulan_ini') {
-            sumA = [500, 600, 550, 620].reduce((a, b) => a + b, 0);
-            sumB = [350, 400, 380, 450].reduce((a, b) => a + b, 0);
-        } else {
-            sumA = Array.from({length: count}, () => Math.floor(Math.random() * 2500) + 500).reduce((a, b) => a + b, 0);
-            sumB = Array.from({length: count}, () => Math.floor(Math.random() * 1800) + 300).reduce((a, b) => a + b, 0);
-        }
-    } else if (effectTimeRange === 'tahun') {
-        const count = effectTimeDuration === 'tahun_ini' ? 1 : effectTimeDuration === '2_tahun' ? 2 : 5;
-        countData = count;
-        if (effectTimeDuration === 'tahun_ini') {
-            sumA = [1000, 1200, 1500, 2000, 2500, 3000, 2800, 2000, 1800, 1500, 1200, 1100].reduce((a, b) => a + b, 0);
-            sumB = [800, 900, 1100, 1400, 1800, 2200, 2000, 1500, 1300, 1100, 900, 850].reduce((a, b) => a + b, 0);
-        } else {
-            sumA = Array.from({length: count}, () => Math.floor(Math.random() * 25000) + 5000).reduce((a, b) => a + b, 0);
-            sumB = Array.from({length: count}, () => Math.floor(Math.random() * 18000) + 3000).reduce((a, b) => a + b, 0);
-        }
+
+    if (effectTimeRange === "hari") {
+      const count =
+        effectTimeDuration === "hari_ini"
+          ? 1
+          : effectTimeDuration === "3_hari"
+            ? 3
+            : 7;
+      countData = count;
+      if (effectTimeDuration === "hari_ini") {
+        sumA = 142; // Fallbacks
+        sumB = 98;
+      } else {
+        sumA = Array.from(
+          { length: count },
+          () => Math.floor(Math.random() * 80) + 20,
+        ).reduce((a, b) => a + b, 0);
+        sumB = Array.from(
+          { length: count },
+          () => Math.floor(Math.random() * 50) + 10,
+        ).reduce((a, b) => a + b, 0);
+      }
+    } else if (effectTimeRange === "minggu") {
+      const count =
+        effectTimeDuration === "minggu_ini"
+          ? 1
+          : effectTimeDuration === "4_minggu"
+            ? 4
+            : 7;
+      countData = count;
+      if (effectTimeDuration === "minggu_ini") {
+        sumA = [120, 150, 100, 180, 142, 130, 160].reduce((a, b) => a + b, 0);
+        sumB = [80, 95, 70, 110, 98, 85, 105].reduce((a, b) => a + b, 0);
+      } else {
+        sumA = Array.from(
+          { length: count },
+          () => Math.floor(Math.random() * 800) + 100,
+        ).reduce((a, b) => a + b, 0);
+        sumB = Array.from(
+          { length: count },
+          () => Math.floor(Math.random() * 500) + 80,
+        ).reduce((a, b) => a + b, 0);
+      }
+    } else if (effectTimeRange === "bulan") {
+      const count =
+        effectTimeDuration === "bulan_ini"
+          ? 1
+          : effectTimeDuration === "3_bulan"
+            ? 3
+            : 6;
+      countData = count;
+      if (effectTimeDuration === "bulan_ini") {
+        sumA = [500, 600, 550, 620].reduce((a, b) => a + b, 0);
+        sumB = [350, 400, 380, 450].reduce((a, b) => a + b, 0);
+      } else {
+        sumA = Array.from(
+          { length: count },
+          () => Math.floor(Math.random() * 2500) + 500,
+        ).reduce((a, b) => a + b, 0);
+        sumB = Array.from(
+          { length: count },
+          () => Math.floor(Math.random() * 1800) + 300,
+        ).reduce((a, b) => a + b, 0);
+      }
+    } else if (effectTimeRange === "tahun") {
+      const count =
+        effectTimeDuration === "tahun_ini"
+          ? 1
+          : effectTimeDuration === "2_tahun"
+            ? 2
+            : 5;
+      countData = count;
+      if (effectTimeDuration === "tahun_ini") {
+        sumA = [
+          1000, 1200, 1500, 2000, 2500, 3000, 2800, 2000, 1800, 1500, 1200,
+          1100,
+        ].reduce((a, b) => a + b, 0);
+        sumB = [
+          800, 900, 1100, 1400, 1800, 2200, 2000, 1500, 1300, 1100, 900, 850,
+        ].reduce((a, b) => a + b, 0);
+      } else {
+        sumA = Array.from(
+          { length: count },
+          () => Math.floor(Math.random() * 25000) + 5000,
+        ).reduce((a, b) => a + b, 0);
+        sumB = Array.from(
+          { length: count },
+          () => Math.floor(Math.random() * 18000) + 3000,
+        ).reduce((a, b) => a + b, 0);
+      }
     }
-    
-    if (effectViewMode === 'rata-rata') {
-        sumA = Math.round(sumA / countData);
-        sumB = Math.round(sumB / countData);
+
+    if (effectViewMode === "rata-rata") {
+      sumA = Math.round(sumA / countData);
+      sumB = Math.round(sumB / countData);
     }
-    
-    setEffectChartData({NodeA: sumA, NodeB: sumB});
-  }, [isDemoMode, userProfile, effectTimeRange, effectTimeDuration, effectViewMode]);
+
+    setEffectChartData({ NodeA: sumA, NodeB: sumB });
+  }, [
+    isDemoMode,
+    userProfile,
+    effectTimeRange,
+    effectTimeDuration,
+    effectViewMode,
+  ]);
+
+  // MODE ASLI: bangun "Perbandingan Efektivitas" dari logs nyata
+  useEffect(() => {
+    if (isDemoMode) return; // Mode demo ditangani efek di atas
+    if (!userProfile) {
+      setEffectChartData({ NodeA: 0, NodeB: 0 });
+      return;
+    }
+    const b = buildChartFromLogs(logs, effectTimeRange, effectTimeDuration);
+    let sumA = b.reduce((acc, c) => acc + c.NodeA, 0);
+    let sumB = b.reduce((acc, c) => acc + c.NodeB, 0);
+    if (effectViewMode === "rata-rata") {
+      const n = b.length || 1;
+      sumA = Math.round(sumA / n);
+      sumB = Math.round(sumB / n);
+    }
+    setEffectChartData({ NodeA: sumA, NodeB: sumB });
+  }, [
+    isDemoMode,
+    userProfile,
+    effectTimeRange,
+    effectTimeDuration,
+    effectViewMode,
+    logs,
+  ]);
 
   const generateLogsSync = () => {
-      const sources = ['Node A (UV 365 nm)', 'Node B (UV 395 nm)'];
-      const source = sources[Math.floor(Math.random() * sources.length)];
-      const isNodeA = source.includes('365');
-      
-      const newLog = {
-        id: Date.now() + Math.random().toString(36).substr(2, 9),
-        timestamp: Date.now(),
-        source: source,
-        action: 'IR Terpicu (+1)',
-        nodeAStatus: { online: nodeA.online, battery: nodeA.battery, voltage: nodeA.voltage, led: nodeA.led },
-        nodeBStatus: { online: nodeB.online, battery: nodeB.battery, voltage: nodeB.voltage, led: nodeB.led }
-      };
-      
-      setLogs(prev => [newLog, ...prev].slice(0, 15));
+    const sources = ["Node A (UV 365 nm)", "Node B (UV 395 nm)"];
+    const source = sources[Math.floor(Math.random() * sources.length)];
+    const isNodeA = source.includes("365");
 
-      if (isNodeA) {
-        setNodeA(prev => ({ ...prev, uv365: prev.uv365 + 1 }));
-      } else {
-        setNodeB(prev => ({ ...prev, uv395: prev.uv395 + 1 }));
-      }
+    const newLog = {
+      id: Date.now() + Math.random().toString(36).substr(2, 9),
+      timestamp: Date.now(),
+      source: source,
+      action: "IR Terpicu (+1)",
+      nodeAStatus: {
+        online: nodeA.online,
+        battery: nodeA.battery,
+        voltage: nodeA.voltage,
+        led: nodeA.led,
+      },
+      nodeBStatus: {
+        online: nodeB.online,
+        battery: nodeB.battery,
+        voltage: nodeB.voltage,
+        led: nodeB.led,
+      },
+    };
+
+    setLogs((prev) => [newLog, ...prev].slice(0, 15));
+
+    if (isNodeA) {
+      setNodeA((prev) => ({ ...prev, uv365: prev.uv365 + 1 }));
+    } else {
+      setNodeB((prev) => ({ ...prev, uv395: prev.uv395 + 1 }));
+    }
   };
 
   const syncToGoogleSheet = async () => {
     setIsSyncingSheet(true);
     try {
       const dataPayload = {
-        action: 'syncData',
+        action: "syncData",
         logs: dataRef.current.logs,
         nodeA: dataRef.current.nodeA,
         nodeB: dataRef.current.nodeB,
         chartData: dataRef.current.chartData,
+        effectChartData: dataRef.current.effectChartData,
+        lingkunganData: dataRef.current.dhtHistory,
         isDemoMode: isDemoMode,
-        email: userProfile?.email
+        email: userProfile?.email,
       };
-      
+
       const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
+          "Content-Type": "text/plain;charset=utf-8",
         },
-        body: JSON.stringify(dataPayload)
+        body: JSON.stringify(dataPayload),
       });
-      
+
       const result = await response.json();
-      if (result.status === 'success') {
+      if (result.status === "success") {
         // Berhasil sinkronisasi
       } else {
-        throw new Error(result.message || 'Unknown error');
+        throw new Error(result.message || "Unknown error");
       }
     } catch (e: any) {
-       console.error("Sync error:", e);
+      console.error("Sync error:", e);
     } finally {
       setIsSyncingSheet(false);
     }
+  };
+
+  const handleScanSheets = async () => {
+    setIsScanning(true);
+    setSheetScanResult(null);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "scanSheets" }),
+      });
+      const result = await response.json();
+      if (result.status === "success") {
+        setSheetScanResult(result.data);
+        setSelectedSheetsToDelete(result.data.unused.map((s: any) => s.name));
+      }
+    } catch (e) {
+      console.error("Gagal scan sheets:", e);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleDeleteSelectedSheets = async () => {
+    if (selectedSheetsToDelete.length === 0) return;
+    setIsDeletingSheets(true);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "deleteSheets",
+          sheetNames: selectedSheetsToDelete,
+        }),
+      });
+      const result = await response.json();
+      if (result.status === "success") {
+        await handleScanSheets();
+      }
+    } catch (e) {
+      console.error("Gagal hapus sheets:", e);
+    } finally {
+      setIsDeletingSheets(false);
+    }
+  };
+
+  const executeReset = async () => {
+    setIsResetting(true);
+    const newNodeAData =
+      resetTarget === "A" || resetTarget === "both"
+        ? { ...nodeA, uv365: 0 }
+        : nodeA;
+    const newNodeBData =
+      resetTarget === "B" || resetTarget === "both"
+        ? { ...nodeB, uv395: 0 }
+        : nodeB;
+    const newLogs =
+      resetTarget === "both"
+        ? []
+        : logs.filter(
+            (log) =>
+              logNodeKey(log.source || "") !==
+              (resetTarget === "A" ? "NodeA" : "NodeB"),
+          );
+
+    if (resetTarget === "A" || resetTarget === "both")
+      setNodeA((prev) => ({ ...prev, uv365: 0 }));
+    if (resetTarget === "B" || resetTarget === "both")
+      setNodeB((prev) => ({ ...prev, uv395: 0 }));
+    setLogs(newLogs);
+
+    if (resetScope === "both" && SCRIPT_URL && userProfile) {
+      try {
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "syncData",
+            logs: newLogs,
+            nodeA: newNodeAData,
+            nodeB: newNodeBData,
+            chartData: [],
+            effectChartData: { NodeA: 0, NodeB: 0 },
+            email: userProfile.email,
+            isDemoMode: false,
+          }),
+        });
+      } catch (e) {
+        console.error("Gagal sync reset ke database:", e);
+      }
+    }
+    setIsResetting(false);
+    setIsResetConfirmOpen(false);
+    setIsResetModalOpen(false);
+  };
+
+  const executeLogReset = async () => {
+    setIsLogResetting(true);
+    setLogs([]);
+    if (logResetScope === "both" && !isDemoMode && SCRIPT_URL && userProfile) {
+      try {
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "syncData",
+            logs: [],
+            nodeA,
+            nodeB,
+            chartData: [],
+            effectChartData,
+            email: userProfile.email,
+            isDemoMode: false,
+          }),
+        });
+      } catch (e) {
+        console.error("Gagal reset log ke database:", e);
+      }
+    }
+    setIsLogResetting(false);
+    setIsLogResetConfirmOpen(false);
+    setIsLogResetModalOpen(false);
   };
 
   const validateEmail = (email: string) => {
     return String(email)
       .toLowerCase()
       .match(
-        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
       );
   };
 
   const validatePassword = (password: string) => {
     // Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special character
-    const re = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    const re =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
     return re.test(password);
   };
 
@@ -1037,75 +1908,81 @@ export default function App() {
   };
 
   const getStrengthColor = (score: number) => {
-    if (score === 0) return 'bg-gray-200 dark:bg-gray-800';
-    if (score === 1) return 'bg-red-500';
-    if (score === 2) return 'bg-orange-500';
-    if (score === 3) return 'bg-yellow-500';
-    return 'bg-emerald-500';
+    if (score === 0) return "bg-gray-200 dark:bg-gray-800";
+    if (score === 1) return "bg-red-500";
+    if (score === 2) return "bg-orange-500";
+    if (score === 3) return "bg-yellow-500";
+    return "bg-emerald-500";
   };
-  
+
   const getStrengthLabel = (score: number) => {
-    if (score === 0) return 'Sangat Lemah';
-    if (score === 1) return 'Lemah';
-    if (score === 2) return 'Sedang';
-    if (score === 3) return 'Kuat';
-    return 'Sangat Kuat';
+    if (score === 0) return "Sangat Lemah";
+    if (score === 1) return "Lemah";
+    if (score === 2) return "Sedang";
+    if (score === 3) return "Kuat";
+    return "Sangat Kuat";
   };
 
   const submitAuth = async () => {
-    setLoginError('');
+    setLoginError("");
     if (!loginEmail || !loginPassword) {
-       setLoginError("Mohon lengkapi email dan password!");
-       return;
+      setLoginError("Mohon lengkapi email dan password!");
+      return;
     }
     if (!validateEmail(loginEmail)) {
-        setLoginError("Format email tidak valid atau bukan email asli!");
-        return;
+      setLoginError("Format email tidak valid atau bukan email asli!");
+      return;
     }
-    
-    if (loginMode === 'register' && !validatePassword(loginPassword)) {
-        setLoginError("Password lemah! Minimal 8 karakter, mencakup huruf besar, huruf kecil, angka, dan simbol khusus (seperti @$!%*?&).");
-        return;
+
+    if (loginMode === "register" && !validatePassword(loginPassword)) {
+      setLoginError(
+        "Password lemah! Minimal 8 karakter, mencakup huruf besar, huruf kecil, angka, dan simbol khusus (seperti @$!%*?&).",
+      );
+      return;
     }
 
     setIsAuthLoading(true);
     try {
       const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           action: loginMode,
           email: loginEmail,
           password: loginPassword,
-          name: loginMode === 'register' ? loginName : undefined,
-          photoURL: loginMode === 'register' ? loginPhoto : undefined,
-          coverUrl: loginMode === 'register' ? loginCover : undefined,
-          isDemoMode: isDemoMode
-        })
+          name: loginMode === "register" ? loginName : undefined,
+          photoURL: loginMode === "register" ? loginPhoto : undefined,
+          coverUrl: loginMode === "register" ? loginCover : undefined,
+          isDemoMode: isDemoMode,
+        }),
       });
       const result = await response.json();
-      if (result.status === 'success') {
-         setLoginSuccess(true);
-         setTimeout(() => {
-           const profile = {
-               displayName: result.data ? result.data.name || loginEmail.split('@')[0] : loginEmail.split('@')[0],
-               email: loginEmail,
-               photoURL: result.data ? result.data.photoURL || '' : '',
-               coverUrl: result.data ? result.data.coverUrl || '' : ''
-           };
-           setUserProfile(profile);
-           localStorage.setItem('userProfile', JSON.stringify(profile));
-           setLoginModalOpen(false);
-           setLoginSuccess(false);
-           setLoginEmail('');
-           setLoginPassword('');
-           setLoginName('');
-         }, 1500); // Wait 1.5s for animation
+      if (result.status === "success") {
+        setLoginSuccess(true);
+        setTimeout(() => {
+          const profile = {
+            displayName: result.data
+              ? result.data.name || loginEmail.split("@")[0]
+              : loginEmail.split("@")[0],
+            email: loginEmail,
+            photoURL: result.data ? result.data.photoURL || "" : "",
+            coverUrl: result.data ? result.data.coverUrl || "" : "",
+          };
+          setUserProfile(profile);
+          localStorage.setItem("userProfile", JSON.stringify(profile));
+          setLoginModalOpen(false);
+          setLoginSuccess(false);
+          setLoginEmail("");
+          setLoginPassword("");
+          setLoginName("");
+        }, 1500); // Wait 1.5s for animation
       } else {
-         setLoginError(result.message || "Email atau password salah.");
+        setLoginError(result.message || "Email atau password salah.");
       }
-    } catch(e: any) {
-      setLoginError("Gagal menghubungi server. Pastikan koneksi internet aktif dan Google Script URL valid.");
+    } catch (e: any) {
+      setLoginError(
+        "Gagal menghubungi server. Pastikan koneksi internet aktif dan Google Script URL valid.",
+      );
     } finally {
       setIsAuthLoading(false);
     }
@@ -1115,45 +1992,67 @@ export default function App() {
     const m365 = parseFloat(manual365);
     const m395 = parseFloat(manual395);
     if (!isNaN(m365) && !isNaN(m395)) {
-      const err365 = m365 > 0 ? (Math.abs(nodeA.uv365 - m365) / m365) * 100 : (nodeA.uv365 > 0 ? 100 : 0);
-      const err395 = m395 > 0 ? (Math.abs(nodeB.uv395 - m395) / m395) * 100 : (nodeB.uv395 > 0 ? 100 : 0);
+      const err365 =
+        m365 > 0
+          ? (Math.abs(nodeA.uv365 - m365) / m365) * 100
+          : nodeA.uv365 > 0
+            ? 100
+            : 0;
+      const err395 =
+        m395 > 0
+          ? (Math.abs(nodeB.uv395 - m395) / m395) * 100
+          : nodeB.uv395 > 0
+            ? 100
+            : 0;
       setEvaluation({ err365, err395 });
     }
   };
 
   const handleDownloadExcel = () => {
     // Dynamically import xlsx to keep the initial bundle small
-    import('xlsx').then(XLSX => {
+    import("xlsx").then((XLSX) => {
       const wb = XLSX.utils.book_new();
 
       // Sheet 1: Logs
-      const vUnit = userProfile?.voltageUnit === 'mV' ? 'mV' : 'V';
-      const logData = logs.map(log => ({
-        'ID Log': log.id,
-        'Waktu (Lengkap)': safeParseDate(log.timestamp || log.id).toLocaleString('id-ID', {
-          year: 'numeric', month: 'long', day: 'numeric',
-          hour: '2-digit', minute: '2-digit', second: '2-digit'
+      const vUnit = userProfile?.voltageUnit === "mV" ? "mV" : "V";
+      const logData = logs.map((log) => ({
+        "ID Log": log.id,
+        "Waktu (Lengkap)": new Date(log.timestamp).toLocaleString("id-ID", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
         }),
-        'Waktu UNIX': log.timestamp || log.id,
-        'Sumber Node': log.source || log.node,
-        'Aksi Deteksi': log.action || 'IR Terpicu (+1)',
-        'Node A Online': log.nodeAStatus?.online ? 'Ya' : 'Tidak',
-        'Node A Baterai (%)': log.nodeAStatus?.battery || 0,
-        [`Node A Tegangan (${vUnit})`]: log.nodeAStatus ? (userProfile?.voltageUnit === 'mV' ? log.nodeAStatus.voltage * 1000 : log.nodeAStatus.voltage) : 0,
-        'Node A LED': log.nodeAStatus?.led ? 'Nyala' : 'Mati',
-        'Node B Online': log.nodeBStatus?.online ? 'Ya' : 'Tidak',
-        'Node B Baterai (%)': log.nodeBStatus?.battery || 0,
-        [`Node B Tegangan (${vUnit})`]: log.nodeBStatus ? (userProfile?.voltageUnit === 'mV' ? log.nodeBStatus.voltage * 1000 : log.nodeBStatus.voltage) : 0,
-        'Node B LED': log.nodeBStatus?.led ? 'Nyala' : 'Mati'
+        "Waktu UNIX": log.timestamp,
+        "Sumber Node": log.source,
+        "Aksi Deteksi": log.action || "IR Terpicu (+1)",
+        "Node A Online": log.nodeAStatus?.online ? "Ya" : "Tidak",
+        "Node A Baterai (%)": log.nodeAStatus?.battery || 0,
+        [`Node A Tegangan (${vUnit})`]: log.nodeAStatus
+          ? userProfile?.voltageUnit === "mV"
+            ? log.nodeAStatus.voltage * 1000
+            : log.nodeAStatus.voltage
+          : 0,
+        "Node A LED": log.nodeAStatus?.led ? "Nyala" : "Mati",
+        "Node B Online": log.nodeBStatus?.online ? "Ya" : "Tidak",
+        "Node B Baterai (%)": log.nodeBStatus?.battery || 0,
+        [`Node B Tegangan (${vUnit})`]: log.nodeBStatus
+          ? userProfile?.voltageUnit === "mV"
+            ? log.nodeBStatus.voltage * 1000
+            : log.nodeBStatus.voltage
+          : 0,
+        "Node B LED": log.nodeBStatus?.led ? "Nyala" : "Mati",
       }));
       const wsLogs = XLSX.utils.json_to_sheet(logData);
       XLSX.utils.book_append_sheet(wb, wsLogs, "Log Deteksi");
 
       // Sheet 2: Chart Data
-      const chartDataFormatted = chartData.map(c => ({
-        'Waktu': c.time,
-        'Tangkapan Node A (365nm)': c.NodeA,
-        'Tangkapan Node B (395nm)': c.NodeB
+      const chartDataFormatted = chartData.map((c) => ({
+        Waktu: c.time,
+        "Tangkapan Node A (365nm)": c.NodeA,
+        "Tangkapan Node B (395nm)": c.NodeB,
       }));
       const wsChart = XLSX.utils.json_to_sheet(chartDataFormatted);
       XLSX.utils.book_append_sheet(wb, wsChart, "Grafik Tangkapan");
@@ -1161,47 +2060,57 @@ export default function App() {
       // Sheet 3: Sensor Status
       const nodesData = [
         {
-          'Nama Node': 'Node A (UV 365nm)',
-          'Total Tangkapan': nodeA.uv365,
-          'Status': nodeA.online ? 'Online' : 'Offline',
-          'Baterai (%)': nodeA.battery,
-          [`Tegangan (${vUnit})`]: userProfile?.voltageUnit === 'mV' ? nodeA.voltage * 1000 : nodeA.voltage,
-          'LED': nodeA.led ? 'Nyala' : 'Mati'
+          "Nama Node": "Node A (UV 365nm)",
+          "Total Tangkapan": nodeA.uv365,
+          Status: nodeA.online ? "Online" : "Offline",
+          "Baterai (%)": nodeA.battery,
+          [`Tegangan (${vUnit})`]:
+            userProfile?.voltageUnit === "mV"
+              ? nodeA.voltage * 1000
+              : nodeA.voltage,
+          LED: nodeA.led ? "Nyala" : "Mati",
         },
         {
-          'Nama Node': 'Node B (UV 395nm)',
-          'Total Tangkapan': nodeB.uv395,
-          'Status': nodeB.online ? 'Online' : 'Offline',
-          'Baterai (%)': nodeB.battery,
-          [`Tegangan (${vUnit})`]: userProfile?.voltageUnit === 'mV' ? nodeB.voltage * 1000 : nodeB.voltage,
-          'LED': nodeB.led ? 'Nyala' : 'Mati'
-        }
+          "Nama Node": "Node B (UV 395nm)",
+          "Total Tangkapan": nodeB.uv395,
+          Status: nodeB.online ? "Online" : "Offline",
+          "Baterai (%)": nodeB.battery,
+          [`Tegangan (${vUnit})`]:
+            userProfile?.voltageUnit === "mV"
+              ? nodeB.voltage * 1000
+              : nodeB.voltage,
+          LED: nodeB.led ? "Nyala" : "Mati",
+        },
       ];
       const wsNodes = XLSX.utils.json_to_sheet(nodesData);
       XLSX.utils.book_append_sheet(wb, wsNodes, "Status Sensor");
 
       if (userProfile) {
-         const userData = [{
-             'Nama': userProfile.displayName || 'Anonim',
-             'Email': userProfile.email || 'Tidak ada',
-             'Status Pengguna': 'Mode Terhubung Offline',
-         }];
-         const wsUser = XLSX.utils.json_to_sheet(userData);
-         XLSX.utils.book_append_sheet(wb, wsUser, "Data Pengguna");
+        const userData = [
+          {
+            Nama: userProfile.displayName || "Anonim",
+            Email: userProfile.email || "Tidak ada",
+            "Status Pengguna": "Mode Terhubung Offline",
+          },
+        ];
+        const wsUser = XLSX.utils.json_to_sheet(userData);
+        XLSX.utils.book_append_sheet(wb, wsUser, "Data Pengguna");
       }
 
       // Save the file
-      XLSX.writeFile(wb, `Database_Lengkap_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      XLSX.writeFile(
+        wb,
+        `Database_Lengkap_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      );
     });
   };
 
   return (
     <div className="relative flex h-screen overflow-hidden text-gray-800 bg-gray-50 dark:bg-gray-950 dark:text-gray-200 transition-colors duration-500 font-sans">
-      
       {/* Decorative Blur Backgrounds */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] dark:opacity-[0.02]">
-           <Bug className="w-[80vw] h-[80vw] text-emerald-900 dark:text-emerald-100 -rotate-12" />
+          <Bug className="w-[80vw] h-[80vw] text-emerald-900 dark:text-emerald-100 -rotate-12" />
         </div>
         <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-emerald-400/10 dark:bg-emerald-900/20 blur-[120px] mix-blend-multiply dark:mix-blend-lighten" />
         <div className="absolute top-[40%] -right-[10%] w-[40%] h-[60%] rounded-full bg-teal-400/10 dark:bg-teal-900/20 blur-[100px] mix-blend-multiply dark:mix-blend-lighten" />
@@ -1210,1015 +2119,2891 @@ export default function App() {
 
       {/* Main Container Wrapper */}
       <div className="flex h-screen w-full relative z-10">
+        {/* Sidebar Overlay */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          ></div>
+        )}
 
-      {/* Sidebar Overlay */}
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden" onClick={() => setSidebarOpen(false)}></div>
-      )}
-
-      {/* Sidebar */}
-      <aside className={cn(
-        "fixed inset-y-0 left-0 w-64 bg-emerald-900 text-white flex flex-col z-30 transform transition-transform duration-300 shadow-xl md:shadow-none md:relative md:translate-x-0",
-        !isSidebarOpen && "-translate-x-full"
-      )}>
-        <div className="p-6 flex items-center justify-between border-b border-emerald-800">
-          <div className="flex items-center gap-3">
-             <Leaf className="text-emerald-400 w-6 h-6" />
-             <div>
-               <h1 className="text-lg font-bold leading-tight">Light Trap IoT</h1>
-               <p className="text-xs text-emerald-300">Monitoring UPDKS</p>
-             </div>
+        {/* Sidebar */}
+        <aside
+          className={cn(
+            "fixed inset-y-0 left-0 w-64 bg-emerald-900 text-white flex flex-col z-30 transform transition-transform duration-300 shadow-xl md:shadow-none md:relative md:translate-x-0",
+            !isSidebarOpen && "-translate-x-full",
+          )}
+        >
+          <div className="p-6 flex items-center justify-between border-b border-emerald-800">
+            <div className="flex items-center gap-3">
+              <Leaf className="text-emerald-400 w-6 h-6" />
+              <div>
+                <h1 className="text-lg font-bold leading-tight">
+                  Light Trap IoT
+                </h1>
+                <p className="text-xs text-emerald-300">Monitoring UPDKS</p>
+              </div>
+            </div>
+            <button
+              className="md:hidden text-emerald-300 hover:text-white"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button className="md:hidden text-emerald-300 hover:text-white" onClick={() => setSidebarOpen(false)}>
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <div className={cn("mb-4 flex items-center justify-between px-3 py-2 rounded-lg border", isDemoMode ? "bg-amber-900/40 border-amber-500/30 text-amber-300" : "bg-emerald-800/60 border-emerald-500/30 text-emerald-300")}>
-             <span className="text-xs font-semibold uppercase tracking-wider">Status Mode</span>
-             <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", isDemoMode ? "bg-amber-400 text-amber-900 border-amber-400" : "bg-emerald-400 text-emerald-900 border-emerald-400")}>
-                {isDemoMode ? 'DEMO' : 'ASLI'}
-             </span>
-          </div>
+          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+            <div
+              className={cn(
+                "mb-4 flex items-center justify-between px-3 py-2 rounded-lg border",
+                isDemoMode
+                  ? "bg-amber-900/40 border-amber-500/30 text-amber-300"
+                  : "bg-emerald-800/60 border-emerald-500/30 text-emerald-300",
+              )}
+            >
+              <span className="text-xs font-semibold uppercase tracking-wider">
+                Status Mode
+              </span>
+              <span
+                className={cn(
+                  "text-xs font-bold px-2 py-0.5 rounded-full border",
+                  isDemoMode
+                    ? "bg-amber-400 text-amber-900 border-amber-400"
+                    : "bg-emerald-400 text-emerald-900 border-emerald-400",
+                )}
+              >
+                {isDemoMode ? "DEMO" : "ASLI"}
+              </span>
+            </div>
 
-          <button onClick={() => { document.getElementById('dashboard-top')?.scrollIntoView({ behavior: 'smooth' }); setSidebarOpen(false); }} className="w-full flex items-center gap-3 bg-emerald-800 text-white p-3 rounded-lg font-medium transition text-left">
-            <PieChart className="w-5 h-5"/> Dashboard
-          </button>
-        </nav>
-        <div className="p-4 border-t border-emerald-800 w-full block">
-          {userProfile ? (
-            <div className="flex items-center justify-between gap-3 w-full">
-              <div className="flex items-center gap-3 w-full cursor-pointer hover:bg-emerald-800 p-2 rounded-lg transition-colors" onClick={() => { setProfileOpen(true); setSidebarOpen(false); }}>
-                <img src={userProfile.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.displayName || 'User')}`} alt="avatar" className="w-10 h-10 rounded-full shrink-0" />
-                <div className="overflow-hidden flex-1">
-                  <p className="text-sm font-semibold truncate w-full">{userProfile.displayName || "User"}</p>
-                  <p className="text-xs text-emerald-300 truncate w-full">{userProfile.email || "user@example.com"}</p>
+            <button
+              onClick={() => {
+                document
+                  .getElementById("dashboard-top")
+                  ?.scrollIntoView({ behavior: "smooth" });
+                setSidebarOpen(false);
+              }}
+              className="w-full flex items-center gap-3 bg-emerald-800 text-white p-3 rounded-lg font-medium transition text-left"
+            >
+              <PieChart className="w-5 h-5" /> Dashboard
+            </button>
+          </nav>
+          <div className="p-4 border-t border-emerald-800 w-full block">
+            {userProfile ? (
+              <div className="flex items-center justify-between gap-3 w-full">
+                <div
+                  className="flex items-center gap-3 w-full cursor-pointer hover:bg-emerald-800 p-2 rounded-lg transition-colors"
+                  onClick={() => {
+                    setProfileOpen(true);
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <img
+                    src={
+                      userProfile.photoURL ||
+                      `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.displayName || "User")}`
+                    }
+                    alt="avatar"
+                    className="w-10 h-10 rounded-full shrink-0"
+                  />
+                  <div className="overflow-hidden flex-1">
+                    <p className="text-sm font-semibold truncate w-full">
+                      {userProfile.displayName || "User"}
+                    </p>
+                    <p className="text-xs text-emerald-300 truncate w-full">
+                      {userProfile.email || "user@example.com"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setLoginModalOpen(true);
+                  setSidebarOpen(false);
+                }}
+                className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 shadow-sm border border-emerald-600"
+              >
+                <div className="bg-white p-1 rounded-full">
+                  <LogIn className="w-4 h-4 text-emerald-600" />
+                </div>
+                Login Akun
+              </button>
+            )}
+          </div>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col h-screen overflow-hidden">
+          <header className="bg-white dark:bg-gray-800 h-auto min-h-[4rem] py-3 lg:py-0 lg:h-16 flex flex-col lg:flex-row lg:items-center justify-between px-4 lg:px-8 border-b border-gray-200 dark:border-gray-700 shrink-0 z-10 shadow-sm transition-colors duration-300 gap-3 lg:gap-0">
+            <div className="flex items-center justify-between w-full lg:w-auto">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <button
+                  className="lg:hidden text-gray-500 hover:text-gray-700 dark:hover:text-white focus:outline-none"
+                  onClick={() => setSidebarOpen(true)}
+                >
+                  <Menu className="w-6 h-6" />
+                </button>
+                <h2 className="text-base sm:text-lg md:text-xl font-semibold text-gray-800 dark:text-white truncate flex items-center gap-2">
+                  Ringkasan Pengamatan
+                  <span
+                    className={cn(
+                      "text-[10px] sm:text-xs px-2 py-0.5 rounded-full border inline-block",
+                      isDemoMode
+                        ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800"
+                        : "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800",
+                    )}
+                  >
+                    {isDemoMode ? "Mode Demo" : "Mode Asli"}
+                  </span>
+                </h2>
+              </div>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="lg:hidden w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none shrink-0"
+              >
+                <SettingsIcon className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex items-center justify-between lg:justify-end gap-2 md:gap-4 w-full lg:w-auto">
+              {!isOnline && (
+                <div className="text-[10px] sm:text-sm font-semibold px-2 sm:px-3 py-1 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 flex items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>{" "}
+                  Offline Mode
+                </div>
+              )}
+              <div className="flex bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm rounded-lg items-center px-2.5 sm:px-3.5 py-1.5 gap-1.5 sm:gap-2 transition-colors w-full lg:w-auto justify-center lg:justify-start">
+                <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500 animate-[spin_4s_linear_infinite] shrink-0" />
+                <div className="flex flex-row items-center justify-center gap-1.5 sm:gap-2 text-gray-700 dark:text-gray-300 font-mono tabular-nums tracking-tight leading-tight truncate">
+                  <span className="text-[10px] sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
+                    {dateStr || "--/--/----"}
+                  </span>
+                  <span className="inline text-gray-300 dark:text-gray-600">
+                    •
+                  </span>
+                  <span className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white shrink-0">
+                    {timeStr || "--:--:--"}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="hidden lg:flex w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none shrink-0"
+              >
+                <SettingsIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-y-auto p-4 lg:p-8" id="dashboard-top">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6 mb-6">
+              {/* Node A */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-purple-500 shadow-sm relative overflow-hidden group">
+                <Bug className="absolute -bottom-4 -right-2 w-24 h-24 text-purple-200 dark:text-purple-900/20 rotate-12 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-12 z-0" />
+                <div className="relative z-10 flex justify-between items-start">
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-1">
+                      Total Tangkapan Sensor
+                    </p>
+                    <h3 className="text-2xl font-bold text-gray-800 dark:text-white">
+                      Node A{" "}
+                      <span className="text-purple-600 dark:text-purple-400 text-sm">
+                        (365 nm)
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isDemoMode && (
+                      <button
+                        onClick={() =>
+                          setNodeA((prev) => ({
+                            ...prev,
+                            uv365: Math.max(0, prev.uv365 - 1),
+                          }))
+                        }
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
+                        title="Kurangi tangkapan (-1)"
+                      >
+                        <Bug className="w-6 h-6" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (isDemoMode) {
+                          setNodeA((prev) => ({
+                            ...prev,
+                            uv365: prev.uv365 + 1,
+                          }));
+                        } else {
+                          setResetOriginNode("A");
+                          setResetTarget("A");
+                          setResetScope("dashboard");
+                          setIsResetModalOpen(true);
+                        }
+                      }}
+                      className={cn(
+                        "w-12 h-12 rounded-full flex items-center justify-center text-purple-600 dark:text-purple-400 transition-transform shadow-sm cursor-pointer hover:scale-110 active:scale-95",
+                        isDemoMode
+                          ? "bg-purple-200 dark:bg-purple-900/60"
+                          : "bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/60",
+                      )}
+                      title={
+                        isDemoMode
+                          ? "Tambah tangkapan (+1)"
+                          : "Reset tangkapan Node A"
+                      }
+                    >
+                      <Bug className="w-6 h-6" />
+                    </button>
+                  </div>
+                </div>
+                <div className="relative z-10 mt-4 flex items-end gap-2">
+                  <span className="text-4xl font-bold text-gray-900 dark:text-white transition-all duration-300">
+                    {nodeA.uv365}
+                  </span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                    ngengat
+                  </span>
+                </div>
+              </div>
+
+              {/* Node B */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-blue-500 shadow-sm relative overflow-hidden group">
+                <Bug className="absolute -bottom-4 -right-2 w-24 h-24 text-blue-200 dark:text-blue-900/20 rotate-12 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-12 z-0" />
+                <div className="relative z-10 flex justify-between items-start">
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-1">
+                      Total Tangkapan Sensor
+                    </p>
+                    <h3 className="text-2xl font-bold text-gray-800 dark:text-white">
+                      Node B{" "}
+                      <span className="text-blue-600 dark:text-blue-400 text-sm">
+                        (395 nm)
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isDemoMode && (
+                      <button
+                        onClick={() =>
+                          setNodeB((prev) => ({
+                            ...prev,
+                            uv395: Math.max(0, prev.uv395 - 1),
+                          }))
+                        }
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
+                        title="Kurangi tangkapan (-1)"
+                      >
+                        <Bug className="w-6 h-6" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (isDemoMode) {
+                          setNodeB((prev) => ({
+                            ...prev,
+                            uv395: prev.uv395 + 1,
+                          }));
+                        } else {
+                          setResetOriginNode("B");
+                          setResetTarget("B");
+                          setResetScope("dashboard");
+                          setIsResetModalOpen(true);
+                        }
+                      }}
+                      className={cn(
+                        "w-12 h-12 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-transform shadow-sm cursor-pointer hover:scale-110 active:scale-95",
+                        isDemoMode
+                          ? "bg-blue-200 dark:bg-blue-900/60"
+                          : "bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60",
+                      )}
+                      title={
+                        isDemoMode
+                          ? "Tambah tangkapan (+1)"
+                          : "Reset tangkapan Node B"
+                      }
+                    >
+                      <Bug className="w-6 h-6" />
+                    </button>
+                  </div>
+                </div>
+                <div className="relative z-10 mt-4 flex items-end gap-2">
+                  <span className="text-4xl font-bold text-gray-900 dark:text-white transition-all duration-300">
+                    {nodeB.uv395}
+                  </span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                    ngengat
+                  </span>
+                </div>
+              </div>
+
+              {/* Node A Status */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
+                <SatelliteDish className="absolute -bottom-4 right-0 w-24 h-24 text-gray-200 dark:text-gray-700/30 rotate-[-15deg] transition-transform duration-500 group-hover:scale-110 group-hover:-translate-x-2 z-0" />
+                <div className="relative z-10 flex justify-between items-center mb-4">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Status Node A (365nm)
+                  </h3>
+                  <span
+                    className={cn(
+                      "px-2 py-1 text-xs font-bold rounded-full border flex items-center gap-1",
+                      nodeA.online
+                        ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800"
+                        : "bg-gray-100 text-gray-500",
+                    )}
+                  >
+                    <Wifi className="w-3 h-3" />{" "}
+                    {nodeA.online ? "Online" : "Offline"}
+                  </span>
+                </div>
+                <div className="relative z-10 space-y-3">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                        <Battery className="w-3 h-3" /> Baterai
+                      </span>
+                      <span className="font-bold text-gray-700 dark:text-gray-300">
+                        {nodeA.battery}% (
+                        {userProfile?.voltageUnit === "mV"
+                          ? nodeA.voltage * 1000 + "mV"
+                          : nodeA.voltage + "V"}
+                        )
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div
+                        className="bg-green-500 h-2 rounded-full transition-all duration-700"
+                        style={{ width: `${nodeA.battery}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Relay Lampu
+                    </span>
+                    <span
+                      className={cn(
+                        "font-bold flex items-center gap-1",
+                        nodeA.led
+                          ? "text-yellow-600 dark:text-yellow-400"
+                          : "text-gray-400",
+                      )}
+                    >
+                      <Lightbulb className="w-4 h-4" />{" "}
+                      {nodeA.led ? "Menyala" : "Mati"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
+                    Jadwal: 18:00 ON — 06:00 OFF (DS3231)
+                  </p>
+                </div>
+              </div>
+
+              {/* Node B Status */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
+                <SatelliteDish className="absolute -bottom-4 right-0 w-24 h-24 text-gray-200 dark:text-gray-700/30 rotate-[-15deg] transition-transform duration-500 group-hover:scale-110 group-hover:-translate-x-2 z-0" />
+                <div className="relative z-10 flex justify-between items-center mb-4">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Status Node B (395nm)
+                  </h3>
+                  <span
+                    className={cn(
+                      "px-2 py-1 text-xs font-bold rounded-full border flex items-center gap-1",
+                      nodeB.online
+                        ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800"
+                        : "bg-gray-100 text-gray-500",
+                    )}
+                  >
+                    <Wifi className="w-3 h-3" />{" "}
+                    {nodeB.online ? "Online" : "Offline"}
+                  </span>
+                </div>
+                <div className="relative z-10 space-y-3">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                        <BatteryMedium className="w-3 h-3" /> Baterai
+                      </span>
+                      <span className="font-bold text-gray-700 dark:text-gray-300">
+                        {nodeB.battery}% (
+                        {userProfile?.voltageUnit === "mV"
+                          ? nodeB.voltage * 1000 + "mV"
+                          : nodeB.voltage + "V"}
+                        )
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div
+                        className="bg-yellow-500 h-2 rounded-full transition-all duration-700"
+                        style={{ width: `${nodeB.battery}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Relay Lampu
+                    </span>
+                    <span
+                      className={cn(
+                        "font-bold flex items-center gap-1",
+                        nodeB.led
+                          ? "text-yellow-600 dark:text-yellow-400"
+                          : "text-gray-400",
+                      )}
+                    >
+                      <Lightbulb className="w-4 h-4" />{" "}
+                      {nodeB.led ? "Menyala" : "Mati"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
+                    Jadwal: 18:00 ON — 06:00 OFF (DS3231)
+                  </p>
                 </div>
               </div>
             </div>
-          ) : (
-            <button onClick={() => { setLoginModalOpen(true); setSidebarOpen(false); }} className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 shadow-sm border border-emerald-600">
-              <div className="bg-white p-1 rounded-full"><LogIn className="w-4 h-4 text-emerald-600" /></div>
-              Login Akun
-            </button>
-          )}
-        </div>
-      </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-         <header className="bg-white dark:bg-gray-800 h-auto min-h-[4rem] py-3 lg:py-0 lg:h-16 flex flex-col lg:flex-row lg:items-center justify-between px-4 lg:px-8 border-b border-gray-200 dark:border-gray-700 shrink-0 z-10 shadow-sm transition-colors duration-300 gap-3 lg:gap-0">
-            <div className="flex items-center justify-between w-full lg:w-auto">
-               <div className="flex items-center gap-3 sm:gap-4">
-                  <button className="lg:hidden text-gray-500 hover:text-gray-700 dark:hover:text-white focus:outline-none" onClick={() => setSidebarOpen(true)}>
-                     <Menu className="w-6 h-6"/>
-                  </button>
-                  <h2 className="text-base sm:text-lg md:text-xl font-semibold text-gray-800 dark:text-white truncate flex items-center gap-2">
-                     Ringkasan Pengamatan
-                     <span className={cn("text-[10px] sm:text-xs px-2 py-0.5 rounded-full border inline-block", isDemoMode ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800" : "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800")}>
-                         {isDemoMode ? 'Mode Demo' : 'Mode Asli'}
-                     </span>
-                  </h2>
-               </div>
-               <button 
-                  onClick={() => setSettingsOpen(true)}
-                  className="lg:hidden w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none shrink-0"
-                >
-                    <SettingsIcon className="w-4 h-4"/>
-                </button>
-            </div>
-            <div className="flex items-center justify-between lg:justify-end gap-2 md:gap-4 w-full lg:w-auto">
-                {!isOnline && (
-                  <div className="text-[10px] sm:text-sm font-semibold px-2 sm:px-3 py-1 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 flex items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0">
-                     <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span> Offline Mode
+            {/* DHT22 — Suhu & Kelembaban */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 mb-6">
+              {/* DHT Node A */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-orange-400 shadow-sm relative overflow-hidden group">
+                <Thermometer className="absolute -bottom-3 -right-2 w-24 h-24 text-orange-100 dark:text-orange-900/20 rotate-6 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-6 z-0" />
+                <div className="relative z-10 flex justify-between items-start mb-4">
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-0.5">
+                      Lingkungan Node A
+                    </p>
+                    <h3 className="text-base font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
+                      <Wind className="w-4 h-4 text-orange-400" /> Suhu &
+                      Kelembaban
+                    </h3>
                   </div>
+                  <span
+                    className={cn(
+                      "px-2 py-0.5 text-xs font-semibold rounded-full",
+                      dhtData.A
+                        ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                        : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500",
+                    )}
+                  >
+                    {dhtData.A ? "Aktif" : "Menunggu"}
+                  </span>
+                </div>
+                <div className="relative z-10 flex gap-6">
+                  <div className="flex flex-col">
+                    <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                      {dhtData.A
+                        ? userProfile?.temperatureUnit === "F"
+                          ? `${((dhtData.A.temp * 9) / 5 + 32).toFixed(1)}°F`
+                          : `${dhtData.A.temp.toFixed(1)}°C`
+                        : "--°C"}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-0.5">
+                      <Thermometer className="w-3 h-3 text-red-400" /> Suhu
+                    </span>
+                  </div>
+                  <div className="w-px bg-gray-200 dark:bg-gray-700" />
+                  <div className="flex flex-col">
+                    <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                      {dhtData.A ? `${dhtData.A.humidity.toFixed(0)}%` : "--%"}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-0.5">
+                      <Droplets className="w-3 h-3 text-blue-400" /> Kelembaban
+                    </span>
+                  </div>
+                </div>
+                {dhtData.A && (
+                  <p className="relative z-10 text-[10px] text-gray-400 dark:text-gray-600 mt-3">
+                    Update:{" "}
+                    {new Date(dhtData.A.timestamp).toLocaleTimeString("id-ID")}
+                  </p>
                 )}
-                <div className="flex bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm rounded-lg items-center px-2.5 sm:px-3.5 py-1.5 gap-1.5 sm:gap-2 transition-colors w-full lg:w-auto justify-center lg:justify-start">
-                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500 animate-[spin_4s_linear_infinite] shrink-0" />
-                    <div className="flex flex-row items-center justify-center gap-1.5 sm:gap-2 text-gray-700 dark:text-gray-300 font-mono tabular-nums tracking-tight leading-tight truncate">
-                        <span className="text-[10px] sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">{dateStr || '--/--/----'}</span>
-                        <span className="inline text-gray-300 dark:text-gray-600">•</span>
-                        <span className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white shrink-0">{timeStr || '--:--:--'}</span>
-                    </div>
-                </div>
-                <button 
-                  onClick={() => setSettingsOpen(true)}
-                  className="hidden lg:flex w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none shrink-0"
-                >
-                    <SettingsIcon className="w-5 h-5"/>
-                </button>
-            </div>
-         </header>
+              </div>
 
-         <div className="flex-1 overflow-y-auto p-4 lg:p-8" id="dashboard-top">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6 mb-6">
-                
-                {/* Node A */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-purple-500 shadow-sm relative overflow-hidden group">
-                   <Bug className="absolute -bottom-4 -right-2 w-24 h-24 text-purple-100 dark:text-purple-900/20 rotate-12 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-12 z-0" />
-                   <div className="relative z-10 flex justify-between items-start">
-                       <div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-1">Total Tangkapan Sensor</p>
-                          <h3 className="text-2xl font-bold text-gray-800 dark:text-white">Node A <span className="text-purple-600 dark:text-purple-400 text-sm">(365 nm)</span></h3>
-                       </div>
-                       <div className="flex items-center gap-2">
-                           {isDemoMode && (
-                               <button 
-                                   onClick={() => setNodeA(prev => ({...prev, uv365: Math.max(0, prev.uv365 - 1)}))}
-                                   className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
-                                   title="Kurangi tangkapan (-1)"
-                               >
-                                  <Bug className="w-6 h-6"/>
-                               </button>
-                           )}
-                           <button 
-                               onClick={() => isDemoMode && setNodeA(prev => ({...prev, uv365: prev.uv365 + 1}))}
-                               className={cn(
-                                   "w-12 h-12 rounded-full flex items-center justify-center text-purple-600 dark:text-purple-400 transition-transform shadow-sm",
-                                   isDemoMode ? "bg-purple-200 dark:bg-purple-900/60 cursor-pointer hover:scale-110 active:scale-95" : "bg-purple-100 dark:bg-purple-900/40"
-                               )}
-                               title={isDemoMode ? "Tambah tangkapan (+1)" : ""}
-                           >
-                              <Bug className="w-6 h-6"/>
-                           </button>
-                       </div>
-                   </div>
-                   <div className="relative z-10 mt-4 flex items-end gap-2">
-                       <span className="text-4xl font-bold text-gray-900 dark:text-white transition-all duration-300">{nodeA.uv365}</span>
-                       <span className="text-sm text-gray-500 dark:text-gray-400 mb-1">ngengat</span>
-                   </div>
+              {/* DHT Node B */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-cyan-400 shadow-sm relative overflow-hidden group">
+                <Thermometer className="absolute -bottom-3 -right-2 w-24 h-24 text-cyan-100 dark:text-cyan-900/20 rotate-6 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-6 z-0" />
+                <div className="relative z-10 flex justify-between items-start mb-4">
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-0.5">
+                      Lingkungan Node B
+                    </p>
+                    <h3 className="text-base font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
+                      <Wind className="w-4 h-4 text-cyan-400" /> Suhu &
+                      Kelembaban
+                    </h3>
+                  </div>
+                  <span
+                    className={cn(
+                      "px-2 py-0.5 text-xs font-semibold rounded-full",
+                      dhtData.B
+                        ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400"
+                        : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500",
+                    )}
+                  >
+                    {dhtData.B ? "Aktif" : "Menunggu"}
+                  </span>
                 </div>
-
-                {/* Node B */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border-l-4 border-l-blue-500 shadow-sm relative overflow-hidden group">
-                   <Bug className="absolute -bottom-4 -right-2 w-24 h-24 text-blue-100 dark:text-blue-900/20 rotate-12 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-12 z-0" />
-                   <div className="relative z-10 flex justify-between items-start">
-                       <div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-1">Total Tangkapan Sensor</p>
-                          <h3 className="text-2xl font-bold text-gray-800 dark:text-white">Node B <span className="text-blue-600 dark:text-blue-400 text-sm">(395 nm)</span></h3>
-                       </div>
-                       <div className="flex items-center gap-2">
-                           {isDemoMode && (
-                               <button 
-                                    onClick={() => setNodeB(prev => ({...prev, uv395: Math.max(0, prev.uv395 - 1)}))}
-                                   className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
-                                   title="Kurangi tangkapan (-1)"
-                               >
-                                  <Bug className="w-6 h-6"/>
-                               </button>
-                           )}
-                           <button 
-                               onClick={() => isDemoMode && setNodeB(prev => ({...prev, uv395: prev.uv395 + 1}))}
-                               className={cn(
-                                   "w-12 h-12 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-transform shadow-sm",
-                                   isDemoMode ? "bg-blue-200 dark:bg-blue-900/60 cursor-pointer hover:scale-110 active:scale-95" : "bg-blue-100 dark:bg-blue-900/40"
-                               )}
-                               title={isDemoMode ? "Tambah tangkapan (+1)" : ""}
-                           >
-                              <Bug className="w-6 h-6"/>
-                           </button>
-                       </div>
-                   </div>
-                   <div className="relative z-10 mt-4 flex items-end gap-2">
-                       <span className="text-4xl font-bold text-gray-900 dark:text-white transition-all duration-300">{nodeB.uv395}</span>
-                       <span className="text-sm text-gray-500 dark:text-gray-400 mb-1">ngengat</span>
-                   </div>
+                <div className="relative z-10 flex gap-6">
+                  <div className="flex flex-col">
+                    <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                      {dhtData.B
+                        ? userProfile?.temperatureUnit === "F"
+                          ? `${((dhtData.B.temp * 9) / 5 + 32).toFixed(1)}°F`
+                          : `${dhtData.B.temp.toFixed(1)}°C`
+                        : "--°C"}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-0.5">
+                      <Thermometer className="w-3 h-3 text-red-400" /> Suhu
+                    </span>
+                  </div>
+                  <div className="w-px bg-gray-200 dark:bg-gray-700" />
+                  <div className="flex flex-col">
+                    <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                      {dhtData.B ? `${dhtData.B.humidity.toFixed(0)}%` : "--%"}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-0.5">
+                      <Droplets className="w-3 h-3 text-blue-400" /> Kelembaban
+                    </span>
+                  </div>
                 </div>
-
-                {/* Node A Status */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
-                   <SatelliteDish className="absolute -bottom-4 right-0 w-24 h-24 text-gray-100 dark:text-gray-700/30 rotate-[-15deg] transition-transform duration-500 group-hover:scale-110 group-hover:-translate-x-2 z-0" />
-                   <div className="relative z-10 flex justify-between items-center mb-4">
-                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Status Node A (365nm)</h3>
-                       <span className={cn("px-2 py-1 text-xs font-bold rounded-full border flex items-center gap-1", nodeA.online ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800" : "bg-gray-100 text-gray-500")}>
-                           <Wifi className="w-3 h-3"/> {nodeA.online ? 'Online' : 'Offline'}
-                       </span>
-                   </div>
-                   <div className="relative z-10 space-y-3">
-                       <div>
-                           <div className="flex justify-between text-xs mb-1">
-                               <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1"><Battery className="w-3 h-3"/> Baterai</span>
-                               <span className="font-bold text-gray-700 dark:text-gray-300">{nodeA.battery}% ({userProfile?.voltageUnit === 'mV' ? nodeA.voltage * 1000 + 'mV' : nodeA.voltage + 'V'})</span>
-                           </div>
-                           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                               <div className="bg-green-500 h-2 rounded-full transition-all duration-700" style={{ width: `${nodeA.battery}%` }}></div>
-                           </div>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-500 dark:text-gray-400">Status LED (Relay)</span>
-                          <span className={cn("font-bold flex items-center gap-1", nodeA.led ? "text-yellow-600 dark:text-yellow-400" : "text-gray-400")}>
-                              <Lightbulb className="w-4 h-4"/> {nodeA.led ? 'Menyala' : 'Mati'}
-                          </span>
-                       </div>
-                   </div>
-                </div>
-
-                {/* Node B Status */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
-                   <SatelliteDish className="absolute -bottom-4 right-0 w-24 h-24 text-gray-100 dark:text-gray-700/30 rotate-[-15deg] transition-transform duration-500 group-hover:scale-110 group-hover:-translate-x-2 z-0" />
-                   <div className="relative z-10 flex justify-between items-center mb-4">
-                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Status Node B (395nm)</h3>
-                       <span className={cn("px-2 py-1 text-xs font-bold rounded-full border flex items-center gap-1", nodeB.online ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800" : "bg-gray-100 text-gray-500")}>
-                           <Wifi className="w-3 h-3"/> {nodeB.online ? 'Online' : 'Offline'}
-                       </span>
-                   </div>
-                   <div className="relative z-10 space-y-3">
-                       <div>
-                           <div className="flex justify-between text-xs mb-1">
-                               <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1"><BatteryMedium className="w-3 h-3"/> Baterai</span>
-                               <span className="font-bold text-gray-700 dark:text-gray-300">{nodeB.battery}% ({userProfile?.voltageUnit === 'mV' ? nodeB.voltage * 1000 + 'mV' : nodeB.voltage + 'V'})</span>
-                           </div>
-                           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                               <div className="bg-yellow-500 h-2 rounded-full transition-all duration-700" style={{ width: `${nodeB.battery}%` }}></div>
-                           </div>
-                       </div>
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-500 dark:text-gray-400">Status LED (Relay)</span>
-                          <span className={cn("font-bold flex items-center gap-1", nodeB.led ? "text-yellow-600 dark:text-yellow-400" : "text-gray-400")}>
-                              <Lightbulb className="w-4 h-4"/> {nodeB.led ? 'Menyala' : 'Mati'}
-                          </span>
-                       </div>
-                   </div>
-                </div>
+                {dhtData.B && (
+                  <p className="relative z-10 text-[10px] text-gray-400 dark:text-gray-600 mt-3">
+                    Update:{" "}
+                    {new Date(dhtData.B.timestamp).toLocaleTimeString("id-ID")}
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-col gap-4 lg:gap-6 mb-6">
-                {/* Arrival Chart */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
-                   <Bug className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-12 transition-transform duration-[2s] group-hover:scale-110 group-hover:-rotate-12 z-0 pointer-events-none" />
-                   <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                       <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                           <PieChart className="w-5 h-5 text-emerald-500" />
-                           Fluktuasi Waktu Kedatangan
-                       </h3>
-                       <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                            <select
-                                value={timeDuration}
-                                onChange={(e) => setTimeDuration(e.target.value)}
-                                className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
-                            >
-                                {timeRange === 'hari' && <>
-                                    <option value="hari_ini">Hari Ini</option>
-                                    <option value="3_hari">3 Hari Terakhir</option>
-                                    <option value="7_hari">7 Hari Terakhir</option>
-                                </>}
-                                {timeRange === 'minggu' && <>
-                                    <option value="minggu_ini">Minggu Ini</option>
-                                    <option value="4_minggu">4 Minggu Terakhir</option>
-                                    <option value="7_minggu">7 Minggu Terakhir</option>
-                                </>}
-                                {timeRange === 'bulan' && <>
-                                    <option value="bulan_ini">Bulan Ini</option>
-                                    <option value="3_bulan">3 Bulan Terakhir</option>
-                                    <option value="6_bulan">6 Bulan Terakhir</option>
-                                </>}
-                                {timeRange === 'tahun' && <>
-                                    <option value="tahun_ini">Tahun Ini</option>
-                                    <option value="2_tahun">1-2 Tahun Terakhir</option>
-                                    <option value="5_tahun">5 Tahun Terakhir</option>
-                                </>}
-                            </select>
-                            
-                            {!isDemoMode && (
-                               <select
-                                   value={chartIntervalAsli}
-                                   onChange={(e) => setChartIntervalAsli(Number(e.target.value))}
-                                   className="w-full sm:w-auto bg-white border border-gray-300 text-gray-900 text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none dark:bg-gray-900 dark:border-gray-600 dark:text-white"
-                               >
-                                   <option value={60}>Setiap 1 Jam</option>
-                                   <option value={30}>Setiap 30 Menit</option>
-                                   <option value={15}>Setiap 15 Menit</option>
-                                   <option value={5}>Setiap 5 Menit</option>
-                                   <option value={1}>Setiap 1 Menit</option>
-                               </select>
+              {/* Arrival Chart */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
+                <Bug className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-200/70 dark:text-gray-900/10 rotate-12 transition-transform duration-[2s] group-hover:scale-110 group-hover:-rotate-12 z-0 pointer-events-none" />
+                <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                  <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <PieChart className="w-5 h-5 text-emerald-500" />
+                    Fluktuasi Waktu Kedatangan
+                  </h3>
+                  <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                    {
+                      <select
+                        value={timeDuration}
+                        onChange={(e) => setTimeDuration(e.target.value)}
+                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                      >
+                        {timeRange === "hari" && (
+                          <>
+                            <option value="hari_ini">Hari Ini</option>
+                            <option value="3_hari">3 Hari Terakhir</option>
+                            <option value="7_hari">7 Hari Terakhir</option>
+                          </>
+                        )}
+                        {timeRange === "minggu" && (
+                          <>
+                            <option value="minggu_ini">Minggu Ini</option>
+                            <option value="4_minggu">4 Minggu Terakhir</option>
+                            <option value="7_minggu">7 Minggu Terakhir</option>
+                          </>
+                        )}
+                        {timeRange === "bulan" && (
+                          <>
+                            <option value="bulan_ini">Bulan Ini</option>
+                            <option value="3_bulan">3 Bulan Terakhir</option>
+                            <option value="6_bulan">6 Bulan Terakhir</option>
+                          </>
+                        )}
+                        {timeRange === "tahun" && (
+                          <>
+                            <option value="tahun_ini">Tahun Ini</option>
+                            <option value="2_tahun">1-2 Tahun Terakhir</option>
+                            <option value="5_tahun">5 Tahun Terakhir</option>
+                          </>
+                        )}
+                      </select>
+                    }
+                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
+                      {(["hari", "minggu", "bulan", "tahun"] as const).map(
+                        (t) => (
+                          <button
+                            key={t}
+                            onClick={() => {
+                              setTimeRange(t);
+                              setTimeDuration(t + "_ini");
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                              timeRange === t
+                                ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm"
+                                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
                             )}
-
-                            <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                                {(['hari', 'minggu', 'bulan', 'tahun'] as const).map(t => (
-                                    <button 
-                                        key={t}
-                                        onClick={() => {
-                                            setTimeRange(t);
-                                            setTimeDuration(t + '_ini');
-                                        }}
-                                        className={cn(
-                                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
-                                            timeRange === t ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-                                        )}
-                                    >
-                                        {t}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        </div>
-                       <div className="relative w-full h-64 md:h-72 min-h-[200px]">
-                          {isDataLoading ? (
-                             <div className="w-full h-full flex flex-col gap-4">
-                                <div className="h-full w-full bg-gray-100 dark:bg-gray-700/50 rounded-lg animate-pulse backdrop-blur-sm relative overflow-hidden">
-                                   <div className="absolute top-1/2 left-0 w-full border-t-2 border-dashed border-gray-300 dark:border-gray-600 top-1/2 -mt-4 opacity-50"></div>
-                                   <div className="absolute top-0 bottom-0 left-[20%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
-                                   <div className="absolute top-0 bottom-0 left-[50%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
-                                   <div className="absolute top-0 bottom-0 left-[80%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
-                                </div>
-                             </div>
-                          ) : (
-                          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                             <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                               <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                               <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} />
-                               <YAxis stroke="#9ca3af" fontSize={12} />
-                               <Tooltip contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: 'white' }} />
-                               <Legend />
-                               <Line type="monotone" dataKey="NodeA" stroke="#8b5cf6" strokeWidth={3} dot={{r:4}} activeDot={{r: 6}} />
-                               <Line type="monotone" dataKey="NodeB" stroke="#3b82f6" strokeWidth={3} dot={{r:4}} activeDot={{r: 6}} />
-                             </LineChart>
-                          </ResponsiveContainer>
-                          )}
-                       </div>
+                          >
+                            {t}
+                          </button>
+                        ),
+                      )}
                     </div>
-
-                    {/* Comparison Chart */}
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
-                       <Microscope className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-[-15deg] transition-transform duration-[2s] group-hover:scale-110 group-hover:-translate-x-[40%] z-0 pointer-events-none" />
-                       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                           <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                               <Bug className="w-5 h-5 text-emerald-500" />
-                               Perbandingan Efektivitas
-                           </h3>
-                           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                                <select
-                                    value={effectTimeDuration}
-                                    onChange={(e) => setEffectTimeDuration(e.target.value)}
-                                    className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
-                                >
-                                    {effectTimeRange === 'hari' && <>
-                                        <option value="hari_ini">Hari Ini</option>
-                                        <option value="3_hari">3 Hari Terakhir</option>
-                                        <option value="7_hari">7 Hari Terakhir</option>
-                                    </>}
-                                    {effectTimeRange === 'minggu' && <>
-                                        <option value="minggu_ini">Minggu Ini</option>
-                                        <option value="4_minggu">4 Minggu Terakhir</option>
-                                        <option value="7_minggu">7 Minggu Terakhir</option>
-                                    </>}
-                                    {effectTimeRange === 'bulan' && <>
-                                        <option value="bulan_ini">Bulan Ini</option>
-                                        <option value="3_bulan">3 Bulan Terakhir</option>
-                                        <option value="6_bulan">6 Bulan Terakhir</option>
-                                    </>}
-                                    {effectTimeRange === 'tahun' && <>
-                                        <option value="tahun_ini">Tahun Ini</option>
-                                        <option value="2_tahun">1-2 Tahun Terakhir</option>
-                                        <option value="5_tahun">5 Tahun Terakhir</option>
-                                    </>}
-                                </select>
-                               <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                                   {(['total', 'rata-rata'] as const).map(m => (
-                                       <button 
-                                           key={m}
-                                           onClick={() => setEffectViewMode(m)}
-                                           className={cn(
-                                               "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
-                                               effectViewMode === m ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800" : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-                                           )}
-                                       >
-                                           {m}
-                                       </button>
-                                   ))}
-                               </div>
-                               <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                                   {(['hari', 'minggu', 'bulan', 'tahun'] as const).map(t => (
-                                       <button 
-                                           key={t}
-                                           onClick={() => {
-                                               setEffectTimeRange(t);
-                                               setEffectTimeDuration(t + '_ini');
-                                           }}
-                                           className={cn(
-                                               "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
-                                               effectTimeRange === t ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-                                           )}
-                                       >
-                                           {t}
-                                       </button>
-                                   ))}
-                               </div>
-                           </div>
-                       </div>
-                       <div className="relative w-full h-64 md:h-72 min-h-[200px]">
-                          {isDataLoading ? (
-                             <div className="w-full h-full flex items-end justify-center gap-8 pb-8 pt-4 relative overflow-hidden">
-                                <div className="absolute top-1/2 left-0 w-full border-t-2 border-dashed border-gray-300 dark:border-gray-600 top-1/2 -mt-4 opacity-50 z-0"></div>
-                                <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm z-10" style={{ height: '70%' }}></div>
-                                <div className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm z-10" style={{ height: '45%' }}></div>
-                             </div>
-                          ) : (
-                           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                              <BarChart data={[{ 
-                                  name: isDemoMode ? (effectViewMode === 'rata-rata' ? 'Rata-rata Tangkapan' : 'Total Tangkapan') : 'Total Tangkapan', 
-                                  NodeA: isDemoMode ? effectChartData.NodeA : nodeA.uv365, 
-                                  NodeB: isDemoMode ? effectChartData.NodeB : nodeB.uv395 
-                              }]}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                                  <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                                  <YAxis stroke="#9ca3af" fontSize={12} />
-                                  <Tooltip contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: 'white' }} cursor={{fill: 'rgba(255,255,255,0.05)'}}/>
-                                  <Legend />
-                                  <Bar dataKey="NodeA" name="UV 365 nm" fill="#8b5cf6" radius={[6,6,0,0]} barSize={40} />
-                                  <Bar dataKey="NodeB" name="UV 395 nm" fill="#3b82f6" radius={[6,6,0,0]} barSize={40} />
-                              </BarChart>
-                           </ResponsiveContainer>
-                          )}
-                       </div>
+                  </div>
+                </div>
+                <div className="relative w-full h-64 md:h-72 min-h-[200px]">
+                  {isDataLoading ? (
+                    <div className="w-full h-full flex flex-col gap-4">
+                      <div className="h-full w-full bg-gray-100 dark:bg-gray-700/50 rounded-lg animate-pulse backdrop-blur-sm relative overflow-hidden">
+                        <div className="absolute top-1/2 left-0 w-full border-t-2 border-dashed border-gray-300 dark:border-gray-600 top-1/2 -mt-4 opacity-50"></div>
+                        <div className="absolute top-0 bottom-0 left-[20%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
+                        <div className="absolute top-0 bottom-0 left-[50%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
+                        <div className="absolute top-0 bottom-0 left-[80%] w-px bg-gray-300 dark:bg-gray-600 opacity-50"></div>
+                      </div>
                     </div>
+                  ) : chartData.length === 0 ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+                      <Leaf className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
+                      <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">
+                        Belum ada data tangkapan ngengat
+                      </p>
+                      <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
+                        Data akan muncul di sini setelah sensor mulai
+                        mendeteksi.
+                      </p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer
+                      width="100%"
+                      height="100%"
+                      minWidth={0}
+                      minHeight={0}
+                    >
+                      <LineChart
+                        data={chartData}
+                        margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="#374151"
+                          vertical={false}
+                        />
+                        <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} />
+                        <YAxis stroke="#9ca3af" fontSize={12} />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#1f2937",
+                            borderColor: "#374151",
+                            color: "white",
+                          }}
+                        />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="NodeA"
+                          stroke="#8b5cf6"
+                          strokeWidth={3}
+                          dot={{ r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="NodeB"
+                          stroke="#3b82f6"
+                          strokeWidth={3}
+                          dot={{ r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              {/* Comparison Chart */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
+                <Microscope className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-200/70 dark:text-gray-900/10 rotate-[-15deg] transition-transform duration-[2s] group-hover:scale-110 group-hover:-translate-x-[40%] z-0 pointer-events-none" />
+                <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                  <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <Bug className="w-5 h-5 text-emerald-500" />
+                    Perbandingan Efektivitas
+                  </h3>
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+                    {
+                      <select
+                        value={effectTimeDuration}
+                        onChange={(e) => setEffectTimeDuration(e.target.value)}
+                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                      >
+                        {effectTimeRange === "hari" && (
+                          <>
+                            <option value="hari_ini">Hari Ini</option>
+                            <option value="3_hari">3 Hari Terakhir</option>
+                            <option value="7_hari">7 Hari Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "minggu" && (
+                          <>
+                            <option value="minggu_ini">Minggu Ini</option>
+                            <option value="4_minggu">4 Minggu Terakhir</option>
+                            <option value="7_minggu">7 Minggu Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "bulan" && (
+                          <>
+                            <option value="bulan_ini">Bulan Ini</option>
+                            <option value="3_bulan">3 Bulan Terakhir</option>
+                            <option value="6_bulan">6 Bulan Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "tahun" && (
+                          <>
+                            <option value="tahun_ini">Tahun Ini</option>
+                            <option value="2_tahun">1-2 Tahun Terakhir</option>
+                            <option value="5_tahun">5 Tahun Terakhir</option>
+                          </>
+                        )}
+                      </select>
+                    }
+                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-auto shrink-0">
+                      {(["total", "rata-rata"] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setEffectViewMode(m)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors whitespace-nowrap text-center",
+                            effectViewMode === m
+                              ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800"
+                              : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
+                          )}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
+                      {(["hari", "minggu", "bulan", "tahun"] as const).map(
+                        (t) => (
+                          <button
+                            key={t}
+                            onClick={() => {
+                              setEffectTimeRange(t);
+                              setEffectTimeDuration(t + "_ini");
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                              effectTimeRange === t
+                                ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm"
+                                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
+                            )}
+                          >
+                            {t}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="relative w-full h-64 md:h-72 min-h-[200px]">
+                  {isDataLoading ? (
+                    <div className="w-full h-full flex items-end justify-center gap-8 pb-8 pt-4 relative overflow-hidden">
+                      <div className="absolute top-1/2 left-0 w-full border-t-2 border-dashed border-gray-300 dark:border-gray-600 top-1/2 -mt-4 opacity-50 z-0"></div>
+                      <div
+                        className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm z-10"
+                        style={{ height: "70%" }}
+                      ></div>
+                      <div
+                        className="w-16 md:w-20 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg animate-pulse backdrop-blur-sm z-10"
+                        style={{ height: "45%" }}
+                      ></div>
+                    </div>
+                  ) : effectChartData.NodeA === 0 &&
+                    effectChartData.NodeB === 0 ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+                      <Bug className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
+                      <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">
+                        Tidak ada data untuk dibandingkan
+                      </p>
+                      <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
+                        Data tangkapan masing-masing node akan dibandingkan di
+                        sini.
+                      </p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer
+                      width="100%"
+                      height="100%"
+                      minWidth={0}
+                      minHeight={0}
+                    >
+                      <BarChart
+                        data={[
+                          {
+                            name:
+                              effectViewMode === "rata-rata"
+                                ? "Rata-rata Tangkapan"
+                                : "Total Tangkapan",
+                            NodeA: effectChartData.NodeA,
+                            NodeB: effectChartData.NodeB,
+                          },
+                        ]}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="#374151"
+                          vertical={false}
+                        />
+                        <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
+                        <YAxis stroke="#9ca3af" fontSize={12} />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#1f2937",
+                            borderColor: "#374151",
+                            color: "white",
+                          }}
+                          cursor={{ fill: "rgba(255,255,255,0.05)" }}
+                        />
+                        <Legend />
+                        <Bar
+                          dataKey="NodeA"
+                          name="UV 365 nm"
+                          fill="#8b5cf6"
+                          radius={[6, 6, 0, 0]}
+                          barSize={40}
+                        />
+                        <Bar
+                          dataKey="NodeB"
+                          name="UV 395 nm"
+                          fill="#3b82f6"
+                          radius={[6, 6, 0, 0]}
+                          barSize={40}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* DHT22 Chart — Grafik Suhu & Kelembaban */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group mb-6">
+              <Wind className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-200/70 dark:text-gray-900/10 rotate-12 transition-transform duration-[2s] group-hover:scale-110 group-hover:-rotate-12 z-0 pointer-events-none" />
+              <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <Wind className="w-5 h-5 text-cyan-500" />
+                  Grafik Suhu &amp; Kelembaban
+                </h3>
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                  <select
+                    value={dhtTimeDuration}
+                    onChange={(e) => setDhtTimeDuration(e.target.value)}
+                    className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
+                  >
+                    {dhtTimeRange === "hari" && (
+                      <>
+                        <option value="hari_ini">Hari Ini</option>
+                        <option value="3_hari">3 Hari Terakhir</option>
+                        <option value="7_hari">7 Hari Terakhir</option>
+                      </>
+                    )}
+                    {dhtTimeRange === "minggu" && (
+                      <>
+                        <option value="minggu_ini">Minggu Ini</option>
+                        <option value="4_minggu">4 Minggu Terakhir</option>
+                        <option value="7_minggu">7 Minggu Terakhir</option>
+                      </>
+                    )}
+                    {dhtTimeRange === "bulan" && (
+                      <>
+                        <option value="bulan_ini">Bulan Ini</option>
+                        <option value="3_bulan">3 Bulan Terakhir</option>
+                        <option value="6_bulan">6 Bulan Terakhir</option>
+                      </>
+                    )}
+                    {dhtTimeRange === "tahun" && (
+                      <>
+                        <option value="tahun_ini">Tahun Ini</option>
+                        <option value="2_tahun">1-2 Tahun Terakhir</option>
+                        <option value="5_tahun">5 Tahun Terakhir</option>
+                      </>
+                    )}
+                  </select>
+                  <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
+                    {(["hari", "minggu", "bulan", "tahun"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => {
+                          setDhtTimeRange(t);
+                          setDhtTimeDuration(t + "_ini");
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                          dhtTimeRange === t
+                            ? "bg-white dark:bg-gray-600 text-cyan-600 dark:text-cyan-400 shadow-sm"
+                            : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
+                        )}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {dhtHistoryAll.length === 0 && dhtHistory.length === 0 ? (
+                <div className="relative z-10 flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+                  <Droplets className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
+                  <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">
+                    Menunggu data sensor DHT22
+                  </p>
+                  <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
+                    Data akan muncul setelah Wemos terhubung.
+                  </p>
+                </div>
+              ) : (
+                <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                  {/* Grafik Suhu */}
+                  <div>
+                    <p className="text-xs font-semibold text-orange-600 dark:text-orange-400 mb-2 flex items-center gap-1">
+                      <Thermometer className="w-3.5 h-3.5" /> Suhu (°C)
+                      <span className="ml-auto flex gap-3 font-normal text-gray-500 dark:text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <span className="w-4 h-1.5 bg-orange-500 rounded inline-block" /> A
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-4 h-1.5 bg-pink-400 rounded inline-block" /> B
+                        </span>
+                      </span>
+                    </p>
+                    <div className="h-44">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <LineChart
+                          data={dhtBuiltChartData}
+                          margin={{ top: 5, right: 10, bottom: 5, left: 0 }}
+                        >
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            stroke="#374151"
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="time"
+                            stroke="#9ca3af"
+                            fontSize={10}
+                            tick={{ fontSize: 10 }}
+                            interval="preserveStartEnd"
+                          />
+                          <YAxis
+                            stroke="#9ca3af"
+                            fontSize={11}
+                            domain={["auto", "auto"]}
+                            tickFormatter={(v) => `${v}°`}
+                            width={44}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "#1f2937",
+                              borderColor: "#374151",
+                              color: "white",
+                              fontSize: 12,
+                            }}
+                            formatter={
+                              ((value: any, name: any) =>
+                                [`${value}°C`, name === "tempA" ? "Node A" : "Node B"]) as any
+                            }
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="tempA"
+                            stroke="#f97316"
+                            strokeWidth={2}
+                            dot={false}
+                            connectNulls
+                            name="tempA"
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="tempB"
+                            stroke="#f9a8d4"
+                            strokeWidth={2}
+                            dot={false}
+                            connectNulls
+                            name="tempB"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Grafik Kelembaban */}
+                  <div>
+                    <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
+                      <Droplets className="w-3.5 h-3.5" /> Kelembaban (%)
+                      <span className="ml-auto flex gap-3 font-normal text-gray-500 dark:text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <span className="w-4 h-1.5 bg-blue-500 rounded inline-block" /> A
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-4 h-1.5 bg-cyan-400 rounded inline-block" /> B
+                        </span>
+                      </span>
+                    </p>
+                    <div className="h-44">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <LineChart
+                          data={dhtBuiltChartData}
+                          margin={{ top: 5, right: 10, bottom: 5, left: 0 }}
+                        >
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            stroke="#374151"
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="time"
+                            stroke="#9ca3af"
+                            fontSize={10}
+                            tick={{ fontSize: 10 }}
+                            interval="preserveStartEnd"
+                          />
+                          <YAxis
+                            stroke="#9ca3af"
+                            fontSize={11}
+                            domain={[0, 100]}
+                            tickFormatter={(v) => `${v}%`}
+                            width={44}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "#1f2937",
+                              borderColor: "#374151",
+                              color: "white",
+                              fontSize: 12,
+                            }}
+                            formatter={
+                              ((value: any, name: any) =>
+                                [`${value}%`, name === "humA" ? "Node A" : "Node B"]) as any
+                            }
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="humA"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            dot={false}
+                            connectNulls
+                            name="humA"
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="humB"
+                            stroke="#22d3ee"
+                            strokeWidth={2}
+                            dot={false}
+                            connectNulls
+                            name="humB"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div
+              className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6"
+              id="log-section"
+            >
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-3 shadow-sm relative overflow-hidden">
+                <List className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-200/70 dark:text-gray-900/10 rotate-[5deg] z-0 pointer-events-none" />
+                <div className="relative z-10 flex justify-between items-center mb-4">
+                  <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <Bug className="w-5 h-5 text-emerald-500" />
+                    Log Deteksi Sensor (Real-time)
+                  </h3>
+                  <div className="flex gap-2 items-center">
+                    <button
+                      onClick={handleDownloadExcel}
+                      className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 transition-colors text-sm font-semibold"
+                      title="Unduh Database Lengkap (Excel)"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span className="hidden sm:inline">Unduh Excel</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setLogResetScope("dashboard");
+                        setIsLogResetModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-orange-700 bg-orange-100 hover:bg-orange-200 dark:text-orange-300 dark:bg-orange-900/40 dark:hover:bg-orange-900/60 transition-colors text-sm font-semibold"
+                      title="Reset semua log deteksi"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span className="hidden sm:inline">Reset Log</span>
+                    </button>
+                    <button
+                      onClick={syncToGoogleSheet}
+                      disabled={isSyncingSheet}
+                      className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200 dark:text-blue-300 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 transition-colors text-sm font-semibold disabled:opacity-50"
+                      title="Kirim ke Google Sheet"
+                    >
+                      {isSyncingSheet ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Database className="w-4 h-4" />
+                      )}
+                      <span className="hidden sm:inline">Simpan API</span>
+                    </button>
+                    {isDemoMode && (
+                      <button
+                        onClick={generateLogsSync}
+                        className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 transition-colors"
+                        title="Sinkronisasi Log"
+                      >
+                        <RotateCcw className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2 mb-4 bg-gray-50 dark:bg-gray-800/50 p-2 sm:p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <select
+                    value={filterSource}
+                    onChange={(e) => setFilterSource(e.target.value)}
+                    className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
+                  >
+                    <option value="all">Semua Node (Sumber)</option>
+                    <option value="Node A (UV 365 nm)">
+                      Node A (UV 365 nm)
+                    </option>
+                    <option value="Node B (UV 395 nm)">
+                      Node B (UV 395 nm)
+                    </option>
+                  </select>
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => setFilterStartDate(e.target.value)}
+                      className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
+                      title="Tanggal Mulai"
+                    />
+                    <span className="text-gray-500 dark:text-gray-400 font-semibold px-1">
+                      -
+                    </span>
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => setFilterEndDate(e.target.value)}
+                      className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
+                      title="Tanggal Akhir"
+                    />
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 max-h-80 overflow-y-auto">
+                  <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                    <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
+                      <tr>
+                        <th className="px-3 py-3 text-center w-12">No.</th>
+                        <th className="px-4 py-3">Waktu (Timestamp)</th>
+                        <th className="px-4 py-3">Sumber Node</th>
+                        <th className="px-4 py-3">Aksi Deteksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {isDataLoading ? (
+                        Array.from({ length: 4 }).map((_, i) => (
+                          <tr key={i} className="animate-pulse">
+                            <td className="px-3 py-3">
+                              <div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-6 mx-auto"></div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-24"></div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-32"></div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-20"></div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : paginatedLogs.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className="px-4 py-8 text-center text-gray-400 dark:text-gray-500"
+                          >
+                            <SatelliteDish className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                            {logs.length === 0
+                              ? "Menunggu koneksi dan data masuk..."
+                              : "Tidak ada log yang sesuai dengan filter."}
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedLogs.map((log, index) => (
+                          <tr
+                            key={log.id}
+                            className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition cursor-help relative group"
+                            title={`Detail Aktivitas:\nWaktu: ${new Date(log.timestamp).toLocaleString("id-ID")}\nSumber: ${log.source}\nAksi Lengkap: Hama terdeteksi memotong pancaran sensor inframerah (${log.action || "IR Terpicu (+1)"}). Data berhasil direkam sistem.`}
+                          >
+                            <td className="px-3 py-3 text-center text-xs font-mono font-semibold text-gray-400 dark:text-gray-500">
+                              {(logCurrentPage - 1) * logsPerPage + index + 1}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-200">
+                              {new Date(log.timestamp).toLocaleString("id-ID", {
+                                dateStyle: "short",
+                                timeStyle: "medium",
+                              })}
+                            </td>
+                            <td className="px-4 py-3 dark:text-gray-300">
+                              {log.source}
+                            </td>
+                            <td className="px-4 py-3 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span className="underline decoration-emerald-300 dark:decoration-emerald-700 decoration-dashed underline-offset-4">
+                                {log.action || "IR Terpicu (+1)"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6" id="log-section">
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 lg:col-span-2 shadow-sm relative overflow-hidden">
-                   <List className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-50 dark:text-gray-900/10 rotate-[5deg] z-0 pointer-events-none" />
-                   <div className="relative z-10 flex justify-between items-center mb-4">
-                       <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                           <Bug className="w-5 h-5 text-emerald-500" />
-                           Log Deteksi Sensor (Real-time)
-                       </h3>
-                       <div className="flex gap-2 items-center">
-                           <button onClick={handleDownloadExcel} className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 transition-colors text-sm font-semibold" title="Unduh Database Lengkap (Excel)">
-                              <Download className="w-4 h-4"/>
-                              <span className="hidden sm:inline">Unduh Excel</span>
-                           </button>
-                           <button onClick={syncToGoogleSheet} disabled={isSyncingSheet} className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200 dark:text-blue-300 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 transition-colors text-sm font-semibold disabled:opacity-50" title="Kirim ke Google Sheet">
-                              {isSyncingSheet ? <Loader2 className="w-4 h-4 animate-spin"/> : <Database className="w-4 h-4"/>}
-                              <span className="hidden sm:inline">Simpan API</span>
-                           </button>
-                           {isDemoMode && (
-                             <button onClick={generateLogsSync} className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 transition-colors" title="Sinkronisasi Log">
-                                <RotateCcw className="w-5 h-5"/>
-                             </button>
-                           )}
-                       </div>
-                   </div>
-                   <div className="flex flex-col sm:flex-row gap-2 mb-4 bg-gray-50 dark:bg-gray-800/50 p-2 sm:p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                       <select 
-                           value={filterSource}
-                           onChange={(e) => setFilterSource(e.target.value)}
-                           className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
-                       >
-                           <option value="all">Semua Node (Sumber)</option>
-                           <option value="Node A (UV 365 nm)">Node A (UV 365 nm)</option>
-                           <option value="Node B (UV 395 nm)">Node B (UV 395 nm)</option>
-                       </select>
-                       <input 
-                           type="date"
-                           value={filterStartDate}
-                           onChange={(e) => setFilterStartDate(e.target.value)}
-                           className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
-                           title="Tanggal Mulai"
-                       />
-                       <input 
-                           type="date"
-                           value={filterEndDate}
-                           onChange={(e) => setFilterEndDate(e.target.value)}
-                           className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
-                           title="Tanggal Akhir"
-                       />
-                   </div>
-                   <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 max-h-80 overflow-y-auto">
-                       <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                           <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
-                               <tr>
-                                   <th className="px-4 py-3">Waktu (Timestamp)</th>
-                                   <th className="px-4 py-3">Sumber Node</th>
-                                   <th className="px-4 py-3">Aksi Deteksi</th>
-                               </tr>
-                           </thead>
-                           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                               {isDataLoading ? (
-                                   Array.from({ length: 4 }).map((_, i) => (
-                                       <tr key={i} className="animate-pulse">
-                                           <td className="px-4 py-3"><div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-24"></div></td>
-                                           <td className="px-4 py-3"><div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-32"></div></td>
-                                           <td className="px-4 py-3"><div className="h-4 bg-gray-200 dark:bg-gray-700/50 rounded w-20"></div></td>
-                                       </tr>
-                                   ))
-                               ) : paginatedLogs.length === 0 ? (
-                                   <tr>
-                                       <td colSpan={3} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
-                                           <SatelliteDish className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                                           {logs.length === 0 ? "Menunggu koneksi dan data masuk..." : "Tidak ada log yang sesuai dengan filter."}
-                                       </td>
-                                   </tr>
-                               ) : paginatedLogs.map((log) => (
-                                   <tr 
-                                       key={log.id} 
-                                       className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition cursor-help relative group"
-                                       title={`Detail Aktivitas:\nWaktu: ${safeParseDate(log.timestamp || log.id).toLocaleString('id-ID')}\nSumber: ${log.source || log.node}\nAksi Lengkap: Hama terdeteksi memotong pancaran sensor inframerah (${log.action || 'IR Terpicu (+1)'}). Data berhasil direkam sistem.`}
-                                   >
-                                       <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-200">{safeParseDate(log.timestamp || log.id).toLocaleTimeString('id-ID')}</td>
-                                       <td className="px-4 py-3 dark:text-gray-300">{log.source || log.node}</td>
-                                       <td className="px-4 py-3 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                           <CheckCircle2 className="w-4 h-4"/> 
-                                           <span className="underline decoration-emerald-300 dark:decoration-emerald-700 decoration-dashed underline-offset-4">{log.action || 'IR Terpicu (+1)'}</span>
-                                       </td>
-                                   </tr>
-                               ))}
-                           </tbody>
-                       </table>
-                   </div>
-                   
-                   {/* Pagination Controls */}
-                   {totalLogPages > 1 && (
-                       <div className="flex items-center justify-between mt-4">
-                           <span className="text-sm text-gray-500 dark:text-gray-400">
-                               Menampilkan {(logCurrentPage - 1) * logsPerPage + 1} - {Math.min(logCurrentPage * logsPerPage, filteredLogs.length)} dari {filteredLogs.length} data
-                           </span>
-                           <div className="flex gap-1">
-                               <button 
-                                   onClick={() => setLogCurrentPage(p => Math.max(1, p - 1))}
-                                   disabled={logCurrentPage === 1}
-                                   className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300 rounded disabled:opacity-50 transition-colors"
-                               >
-                                   Mundur
-                               </button>
-                               <div className="px-3 py-1 text-sm bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded font-semibold border border-emerald-100 dark:border-emerald-800">
-                                   {logCurrentPage} / {totalLogPages}
-                               </div>
-                               <button 
-                                   onClick={() => setLogCurrentPage(p => Math.min(totalLogPages, p + 1))}
-                                   disabled={logCurrentPage === totalLogPages}
-                                   className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300 rounded disabled:opacity-50 transition-colors"
-                               >
-                                   Maju
-                               </button>
-                           </div>
-                       </div>
-                   )}
-                </div>
-
-                {isDemoMode && (
-                <div className="bg-emerald-50/50 dark:bg-emerald-900/20 rounded-2xl p-4 md:p-5 border border-emerald-100 dark:border-emerald-800/30">
-                   <div className="flex items-center gap-2 mb-4">
-                       <Microscope className="text-emerald-600 dark:text-emerald-400 w-6 h-6" />
-                       <h3 className="text-base md:text-lg font-bold text-emerald-900 dark:text-emerald-400">Modul Evaluasi Akurasi</h3>
-                   </div>
-                   <p className="text-xs text-emerald-700 dark:text-emerald-300/70 mb-4 leading-relaxed">
-                       Masukkan jumlah tangkapan fisik (manual) di toples pagi hari untuk menghitung error rate pembacaan sensor IR.
-                   </p>
-                   <div className="space-y-4">
-                       <div>
-                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tangkapan Fisik 365 nm (Node A)</label>
-                           <input type="number" value={manual365} onChange={e=>setManual365(e.target.value)} placeholder="Contoh: 140" className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 transition-colors"/>
-                       </div>
-                       <div>
-                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tangkapan Fisik 395 nm (Node B)</label>
-                           <input type="number" value={manual395} onChange={e=>setManual395(e.target.value)} placeholder="Contoh: 95" className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 transition-colors"/>
-                       </div>
-                       <button onClick={calculateAccuracy} className="w-full text-white bg-emerald-600 hover:bg-emerald-700 focus:ring-4 focus:ring-emerald-300 font-medium rounded-lg text-sm px-5 py-3 transition text-center shadow-md">
-                           Kalkulasi Akurasi Sensor
-                       </button>
-
-                       {evaluation && (
-                           <div className="mt-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 transition-all">
-                               <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-3">Hasil Evaluasi Error Rate:</h4>
-                               <div className="flex justify-between items-center text-sm mb-2 pb-2 border-b border-gray-100 dark:border-gray-700">
-                                   <span className="text-gray-600 dark:text-gray-300">Sensor 365 nm:</span>
-                                   <span className={cn("font-bold text-gray-800 dark:text-white", evaluation.err365 <= 5 ? "text-green-500" : evaluation.err365 <= 10 ? "text-yellow-500" : "text-red-500")}>{evaluation.err365.toFixed(2)}%</span>
-                               </div>
-                               <div className="flex justify-between items-center text-sm">
-                                   <span className="text-gray-600 dark:text-gray-300">Sensor 395 nm:</span>
-                                   <span className={cn("font-bold text-gray-800 dark:text-white", evaluation.err395 <= 5 ? "text-green-500" : evaluation.err395 <= 10 ? "text-yellow-500" : "text-red-500")}>{evaluation.err395.toFixed(2)}%</span>
-                               </div>
-                           </div>
-                       )}
-                   </div>
-                </div>
+                {/* Pagination Controls */}
+                {totalLogPages > 1 && (
+                  <div className="flex items-center justify-between mt-4 gap-2">
+                    <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 min-w-0">
+                      <span className="sm:hidden">
+                        {(logCurrentPage - 1) * logsPerPage + 1}–
+                        {Math.min(
+                          logCurrentPage * logsPerPage,
+                          filteredLogs.length,
+                        )}{" "}
+                        / {filteredLogs.length}
+                      </span>
+                      <span className="hidden sm:inline">
+                        Menampilkan {(logCurrentPage - 1) * logsPerPage + 1} –{" "}
+                        {Math.min(
+                          logCurrentPage * logsPerPage,
+                          filteredLogs.length,
+                        )}{" "}
+                        dari {filteredLogs.length} data
+                      </span>
+                    </span>
+                    <div className="flex gap-1 shrink-0">
+                      <button
+                        onClick={() =>
+                          setLogCurrentPage((p) => Math.max(1, p - 1))
+                        }
+                        disabled={logCurrentPage === 1}
+                        className="px-2 sm:px-3 py-1 text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300 rounded disabled:opacity-50 transition-colors min-w-[2rem] text-center"
+                      >
+                        <span className="hidden sm:inline">Mundur</span>
+                        <span className="sm:hidden">‹</span>
+                      </button>
+                      <div className="px-2 sm:px-3 py-1 text-xs sm:text-sm bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded font-semibold border border-emerald-100 dark:border-emerald-800 whitespace-nowrap">
+                        {logCurrentPage} / {totalLogPages}
+                      </div>
+                      <button
+                        onClick={() =>
+                          setLogCurrentPage((p) =>
+                            Math.min(totalLogPages, p + 1),
+                          )
+                        }
+                        disabled={logCurrentPage === totalLogPages}
+                        className="px-2 sm:px-3 py-1 text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300 rounded disabled:opacity-50 transition-colors min-w-[2rem] text-center"
+                      >
+                        <span className="hidden sm:inline">Maju</span>
+                        <span className="sm:hidden">›</span>
+                      </button>
+                    </div>
+                  </div>
                 )}
+              </div>
+
+              {isDemoMode && (
+                <div className="bg-emerald-50/50 dark:bg-emerald-900/20 rounded-2xl p-4 md:p-5 border border-emerald-100 dark:border-emerald-800/30">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Microscope className="text-emerald-600 dark:text-emerald-400 w-6 h-6" />
+                    <h3 className="text-base md:text-lg font-bold text-emerald-900 dark:text-emerald-400">
+                      Modul Evaluasi Akurasi
+                    </h3>
+                  </div>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300/70 mb-4 leading-relaxed">
+                    Masukkan jumlah tangkapan fisik (manual) di toples pagi hari
+                    untuk menghitung error rate pembacaan sensor IR.
+                  </p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Tangkapan Fisik 365 nm (Node A)
+                      </label>
+                      <input
+                        type="number"
+                        value={manual365}
+                        onChange={(e) => setManual365(e.target.value)}
+                        placeholder="Contoh: 140"
+                        className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Tangkapan Fisik 395 nm (Node B)
+                      </label>
+                      <input
+                        type="number"
+                        value={manual395}
+                        onChange={(e) => setManual395(e.target.value)}
+                        placeholder="Contoh: 95"
+                        className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 transition-colors"
+                      />
+                    </div>
+                    <button
+                      onClick={calculateAccuracy}
+                      className="w-full text-white bg-emerald-600 hover:bg-emerald-700 focus:ring-4 focus:ring-emerald-300 font-medium rounded-lg text-sm px-5 py-3 transition text-center shadow-md"
+                    >
+                      Kalkulasi Akurasi Sensor
+                    </button>
+
+                    {evaluation && (
+                      <div className="mt-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 transition-all">
+                        <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-3">
+                          Hasil Evaluasi Error Rate:
+                        </h4>
+                        <div className="flex justify-between items-center text-sm mb-2 pb-2 border-b border-gray-100 dark:border-gray-700">
+                          <span className="text-gray-600 dark:text-gray-300">
+                            Sensor 365 nm:
+                          </span>
+                          <span
+                            className={cn(
+                              "font-bold text-gray-800 dark:text-white",
+                              evaluation.err365 <= 5
+                                ? "text-green-500"
+                                : evaluation.err365 <= 10
+                                  ? "text-yellow-500"
+                                  : "text-red-500",
+                            )}
+                          >
+                            {evaluation.err365.toFixed(2)}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-600 dark:text-gray-300">
+                            Sensor 395 nm:
+                          </span>
+                          <span
+                            className={cn(
+                              "font-bold text-gray-800 dark:text-white",
+                              evaluation.err395 <= 5
+                                ? "text-green-500"
+                                : evaluation.err395 <= 10
+                                  ? "text-yellow-500"
+                                  : "text-red-500",
+                            )}
+                          >
+                            {evaluation.err395.toFixed(2)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <footer className="mt-8 text-center text-xs text-gray-400 dark:text-gray-500 pb-4">
-                &copy; 2026 Riyan (2305125) - Politeknik LPP Yogyakarta. Sistem Monitoring Light Trap UPDKS.
+              &copy; 2026 Riyan (2305125) - Politeknik LPP Yogyakarta. Sistem
+              Monitoring Light Trap UPDKS.
             </footer>
-         </div>
-      </main>
-
-      {/* Settings Modal */}
-      {isSettingsOpen && (
-          <div className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity" onClick={(e) => e.target === e.currentTarget && setSettingsOpen(false)}>
-              <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm max-h-[90vh] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
-                  <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 shrink-0">
-                      <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><SettingsIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400"/> Pengaturan Halaman</h3>
-                      <button onClick={() => setSettingsOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                          <X className="w-5 h-5"/>
-                      </button>
-                  </div>
-                  <div className="p-5 space-y-6 overflow-y-auto">
-                      <div>
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Sumber Data (Koneksi)</label>
-                          <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-1.5 border border-emerald-200 dark:border-emerald-800 cursor-pointer w-full" onClick={() => {
-                              const newVal = !isDemoMode;
-                              setIsDemoMode(newVal);
-                              localStorage.setItem('isDemoMode', String(newVal));
-                              
-                              // Logout otomatis saat berpindah mode
-                              setUserProfile(null);
-                              localStorage.removeItem('userProfile');
-                              setSheetSettingsOpen(false); // Opsional tutup modal settings
-                          }}>
-                              <div className={cn("flex-1 text-center py-2.5 text-xs sm:text-sm font-bold rounded-md transition-all", isDemoMode ? "bg-white dark:bg-emerald-700 shadow-sm text-emerald-700 dark:text-white" : "text-emerald-600 dark:text-emerald-400")}>
-                                  DATA DEMO
-                              </div>
-                              <div className={cn("flex-1 text-center py-2.5 text-xs sm:text-sm font-bold rounded-md transition-all", !isDemoMode ? "bg-white dark:bg-emerald-700 shadow-sm text-emerald-700 dark:text-white" : "text-emerald-600 dark:text-emerald-400")}>
-                                  DATA ASLI
-                              </div>
-                          </div>
-                      </div>
-                      <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Target Perangkat ESP8266</label>
-                          <p className="text-xs text-gray-500 mb-3">Tentukan Node mana yang akan diisi datanya oleh modul ESP8266 Anda saat ini.</p>
-                          <div className="flex flex-col gap-2">
-                             <div className="flex items-center gap-2">
-                                <button
-                                   onClick={() => {
-                                      setEspTargetNode('A');
-                                      localStorage.setItem('espTargetNode', 'A');
-                                   }}
-                                   className={cn("flex-1 py-2 text-xs sm:text-sm font-bold rounded-lg border transition-all", espTargetNode === 'A' ? "bg-emerald-100 border-emerald-500 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-500" : "bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400")}
-                                >
-                                   Jadikan Node A (365nm)
-                                </button>
-                                <button
-                                   onClick={() => {
-                                      setEspTargetNode('B');
-                                      localStorage.setItem('espTargetNode', 'B');
-                                   }}
-                                   className={cn("flex-1 py-2 text-xs sm:text-sm font-bold rounded-lg border transition-all", espTargetNode === 'B' ? "bg-blue-100 border-blue-500 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400 dark:border-blue-500" : "bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400")}
-                                >
-                                   Jadikan Node B (395nm)
-                                </button>
-                             </div>
-                             <div className="flex items-center gap-2 mt-2">
-                                <button
-                                   onClick={() => resetTangkapan('A', false)}
-                                   className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900/50 dark:text-red-400"
-                                >
-                                   Reset Node A (Lokal)
-                                </button>
-                                <button
-                                   onClick={() => resetTangkapan('A', true)}
-                                   className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 dark:bg-red-900/40 dark:border-red-900/70 dark:text-red-300"
-                                >
-                                   Reset A (Lokal & DB)
-                                </button>
-                             </div>
-                             <div className="flex items-center gap-2 mt-2">
-                                <button
-                                   onClick={() => resetTangkapan('B', false)}
-                                   className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900/50 dark:text-red-400"
-                                >
-                                   Reset Node B (Lokal)
-                                </button>
-                                <button
-                                   onClick={() => resetTangkapan('B', true)}
-                                   className="flex-1 py-1.5 text-xs font-semibold rounded-lg bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 dark:bg-red-900/40 dark:border-red-900/70 dark:text-red-300"
-                                >
-                                   Reset B (Lokal & DB)
-                                </button>
-                             </div>
-                             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-                                 <button
-                                     onClick={fetchDataFromGoogleSheets}
-                                     disabled={isSyncingSheet || isDemoMode}
-                                     className="w-full flex items-center justify-center gap-2 py-2 text-xs sm:text-sm font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800 disabled:opacity-50 transition-colors"
-                                 >
-                                     {isSyncingSheet ? <Loader2 className="w-4 h-4 animate-spin"/> : <Download className="w-4 h-4" />}
-                                     Tarik Data dari Google Sheets
-                                 </button>
-                                 <p className="text-[10px] text-gray-500 mt-1.5 mb-0 text-center leading-tight">
-                                     Gunakan ini untuk memulihkan total tangkapan jika tidak sengaja ter-reset (Membutuhkan dukungan "fetchData" di Backend).
-                                 </p>
-                             </div>
-                          </div>
-                      </div>
-                      <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Tema Tampilan</label>
-                          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1.5 border border-gray-200 dark:border-gray-700 w-full justify-between gap-1">
-                              {['light', 'system', 'dark'].map((t) => (
-                                  <button key={t} onClick={() => {
-                                      setTheme(t as any);
-                                      localStorage.setItem('theme', t);
-                                      setSettingsOpen(false);
-                                  }} className={cn("flex-1 py-2 rounded-md flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-colors text-xs font-medium capitalize", theme === t ? "bg-white dark:bg-gray-600 shadow-sm text-emerald-600 dark:text-emerald-400" : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-300")}>
-                                      {t === 'light' ? 'Terang' : t === 'dark' ? 'Gelap' : 'Sistem'}
-                                  </button>
-                              ))}
-                          </div>
-                      </div>
-                  </div>
-                  <div className="px-5 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 text-center">
-                      <button onClick={() => setSettingsOpen(false)} className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">Tutup Pengaturan</button>
-                  </div>
-              </div>
           </div>
-      )}
+        </main>
 
-      {/* Login Modal */}
-      <AnimatePresence>
-      {isLoginModalOpen && (
-        <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center" onClick={(e) => {
-            if(e.target === e.currentTarget) {
-               setLoginModalOpen(false);
+        {/* Settings Modal */}
+        {isSettingsOpen && (
+          <div
+            className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity"
+            onClick={(e) =>
+              e.target === e.currentTarget && setSettingsOpen(false)
             }
-        }}>
-            <motion.div 
+          >
+            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
+              <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 shrink-0">
+                <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <SettingsIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />{" "}
+                  Pengaturan Halaman
+                </h3>
+                <button
+                  onClick={() => setSettingsOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-6 overflow-y-auto flex-1">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Sumber Data (Koneksi)
+                  </label>
+                  <div
+                    className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-1.5 border border-emerald-200 dark:border-emerald-800 cursor-pointer w-full"
+                    onClick={() => {
+                      const newVal = !isDemoMode;
+                      setIsDemoMode(newVal);
+                      localStorage.setItem("isDemoMode", String(newVal));
+
+                      // Logout otomatis saat berpindah mode
+                      setUserProfile(null);
+                      localStorage.removeItem("userProfile");
+                      setSheetSettingsOpen(false); // Opsional tutup modal settings
+                    }}
+                  >
+                    <div
+                      className={cn(
+                        "flex-1 text-center py-2.5 text-xs sm:text-sm font-bold rounded-md transition-all",
+                        isDemoMode
+                          ? "bg-white dark:bg-emerald-700 shadow-sm text-emerald-700 dark:text-white"
+                          : "text-emerald-600 dark:text-emerald-400",
+                      )}
+                    >
+                      DATA DEMO
+                    </div>
+                    <div
+                      className={cn(
+                        "flex-1 text-center py-2.5 text-xs sm:text-sm font-bold rounded-md transition-all",
+                        !isDemoMode
+                          ? "bg-white dark:bg-emerald-700 shadow-sm text-emerald-700 dark:text-white"
+                          : "text-emerald-600 dark:text-emerald-400",
+                      )}
+                    >
+                      DATA ASLI
+                    </div>
+                  </div>
+                </div>
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Tema Tampilan
+                  </label>
+                  <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1.5 border border-gray-200 dark:border-gray-700 w-full justify-between gap-1">
+                    {["light", "system", "dark"].map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => {
+                          setTheme(t as any);
+                          localStorage.setItem("theme", t);
+                          setSettingsOpen(false);
+                        }}
+                        className={cn(
+                          "flex-1 py-2 rounded-md flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition-colors text-xs font-medium capitalize",
+                          theme === t
+                            ? "bg-white dark:bg-gray-600 shadow-sm text-emerald-600 dark:text-emerald-400"
+                            : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-300",
+                        )}
+                      >
+                        {t === "light"
+                          ? "Terang"
+                          : t === "dark"
+                            ? "Gelap"
+                            : "Sistem"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Buffer Data Baterai (Offline)
+                  </label>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 leading-tight max-w-[200px]">
+                      Proses data baterai saat WiFi kembali online
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newVal = !bufferBatteryEnabled;
+                        setBufferBatteryEnabled(newVal);
+                        localStorage.setItem(
+                          "bufferBatteryEnabled",
+                          String(newVal),
+                        );
+                      }}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none",
+                        bufferBatteryEnabled
+                          ? "bg-emerald-500"
+                          : "bg-gray-300 dark:bg-gray-600",
+                      )}
+                      title={
+                        bufferBatteryEnabled
+                          ? "Buffer baterai aktif"
+                          : "Buffer baterai nonaktif"
+                      }
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                          bufferBatteryEnabled
+                            ? "translate-x-6"
+                            : "translate-x-1",
+                        )}
+                      />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1.5">
+                    {bufferBatteryEnabled
+                      ? "Aktif — data baterai dari buffer akan diproses"
+                      : "Nonaktif — data baterai buffer diabaikan dashboard"}
+                  </p>
+                </div>
+                {/* Kontrol Relay Lampu */}
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Kontrol Relay Lampu UV
+                  </label>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
+                    ON/OFF lampu UV tiap node secara manual via MQTT. Otomatis dinonaktifkan saat kirim perintah.
+                  </p>
+                  <div className="space-y-2.5">
+                    {(["A", "B"] as const).map((node) => {
+                      const isOn = node === "A" ? nodeA.led : nodeB.led;
+                      const isOnline = node === "A" ? nodeA.online : nodeB.online;
+                      const label = node === "A" ? "Node A — UV 365nm" : "Node B — UV 395nm";
+                      const publishRelay = (state: boolean) => {
+                        if (!mqttClientRef.current) return;
+                        const payload = JSON.stringify({ node, state });
+                        mqttClientRef.current.publish("dashboard/ngengat/relay", payload);
+                        // Optimistic update
+                        if (node === "A") setNodeA((p) => ({ ...p, led: state }));
+                        else setNodeB((p) => ({ ...p, led: state }));
+                      };
+                      return (
+                        <div
+                          key={node}
+                          className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-xl px-3 py-2.5 border border-gray-200 dark:border-gray-600"
+                        >
+                          <div>
+                            <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{label}</p>
+                            <p className={`text-[10px] font-medium mt-0.5 ${isOnline ? (isOn ? "text-yellow-500" : "text-gray-400 dark:text-gray-500") : "text-red-400"}`}>
+                              {isOnline ? (isOn ? "Lampu Menyala" : "Lampu Mati") : "Node Offline"}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              disabled={!isOnline || !mqttClientRef.current || isDemoMode}
+                              onClick={() => publishRelay(false)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                !isOn && isOnline
+                                  ? "bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-500"
+                                  : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              }`}
+                            >
+                              OFF
+                            </button>
+                            <button
+                              disabled={!isOnline || !mqttClientRef.current || isDemoMode}
+                              onClick={() => publishRelay(true)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                isOn && isOnline
+                                  ? "bg-yellow-400 text-yellow-900 border-yellow-500"
+                                  : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-yellow-50 dark:hover:bg-yellow-900/20"
+                              }`}
+                            >
+                              ON
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {isDemoMode && (
+                    <p className="text-[10px] text-amber-500 dark:text-amber-400 mt-2 text-center">
+                      Mode Demo — kontrol relay tidak aktif
+                    </p>
+                  )}
+                </div>
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Panduan Perakitan
+                  </label>
+                  <button
+                    onClick={() => {
+                      setIsWiringGuideOpen(true);
+                      setSettingsOpen(false);
+                    }}
+                    className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Cable className="w-4 h-4" />
+                    Panduan Wiring Modul ke NodeMCU ESP8266
+                  </button>
+                </div>
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Manajemen Database Sheet
+                  </label>
+                  <button
+                    onClick={() => {
+                      setIsSheetManagerOpen(true);
+                      setSettingsOpen(false);
+                    }}
+                    className="w-full py-2.5 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Database className="w-4 h-4" />
+                    Kelola Sheet Tidak Terpakai
+                  </button>
+                </div>
+              </div>
+              <div className="px-5 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 text-center shrink-0">
+                <button
+                  onClick={() => setSettingsOpen(false)}
+                  className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                >
+                  Tutup Pengaturan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Wiring Guide Modal */}
+        {isWiringGuideOpen && (
+          <div
+            className="fixed inset-0 bg-gray-900/50 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={(e) => e.target === e.currentTarget && setIsWiringGuideOpen(false)}
+          >
+            <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 shrink-0 rounded-t-2xl">
+                <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <Cable className="w-5 h-5 text-blue-500" />
+                  Panduan Wiring Modul ke Wemos D1 Mini
+                </h3>
+                <button
+                  onClick={() => setIsWiringGuideOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable content */}
+              <div className="overflow-y-auto p-5 space-y-4">
+
+                {/* Info */}
+                <div className="flex items-start gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-xs text-blue-700 dark:text-blue-300">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Berdasarkan kode <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded font-mono">main.cpp</code>. Pin yang sama berlaku untuk Node A dan Node B.</span>
+                </div>
+
+                {/* DHT22 */}
+                <div className="border border-orange-200 dark:border-orange-800/50 rounded-xl overflow-hidden">
+                  <div className="bg-orange-50 dark:bg-orange-900/20 px-4 py-2.5 flex items-center gap-2">
+                    <Thermometer className="w-4 h-4 text-orange-500" />
+                    <span className="font-semibold text-sm text-orange-700 dark:text-orange-300">DHT22 — Suhu &amp; Kelembaban</span>
+                  </div>
+                  <div className="p-4">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                          <th className="text-left pb-2 font-semibold">Pin DHT22</th>
+                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
+                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-700 dark:text-gray-300 space-y-1">
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">VCC</td>
+                          <td className="py-1.5 font-mono text-red-500">3.3V</td>
+                          <td className="py-1.5">Tegangan input</td>
+                        </tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">GND</td>
+                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5">Ground</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold">DATA</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">D2 (GPIO4)</td>
+                          <td className="py-1.5">Pin data sensor</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/10 rounded-lg p-2">
+                      <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>Tambahkan resistor <strong>10kΩ</strong> antara pin DATA dan VCC (pull-up). Tanpa ini sensor sering gagal baca.</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sensor IR */}
+                <div className="border border-purple-200 dark:border-purple-800/50 rounded-xl overflow-hidden">
+                  <div className="bg-purple-50 dark:bg-purple-900/20 px-4 py-2.5 flex items-center gap-2">
+                    <Bug className="w-4 h-4 text-purple-500" />
+                    <span className="font-semibold text-sm text-purple-700 dark:text-purple-300">Sensor IR — Deteksi Ngengat</span>
+                  </div>
+                  <div className="p-4">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                          <th className="text-left pb-2 font-semibold">Pin Sensor IR</th>
+                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
+                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-700 dark:text-gray-300">
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">VCC</td>
+                          <td className="py-1.5 font-mono text-red-500">5V</td>
+                          <td className="py-1.5">Dari pin 5V Wemos</td>
+                        </tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">GND</td>
+                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5">Ground</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold">OUT</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">D1 (GPIO5)</td>
+                          <td className="py-1.5">Sinyal deteksi</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/10 rounded-lg p-2">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>OUT bernilai <strong>LOW</strong> saat objek terdeteksi (active low). Sensitivitas bisa diatur lewat potensio di modul.</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* DS3231 RTC */}
+                <div className="border border-cyan-200 dark:border-cyan-800/50 rounded-xl overflow-hidden">
+                  <div className="bg-cyan-50 dark:bg-cyan-900/20 px-4 py-2.5 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-cyan-500" />
+                    <span className="font-semibold text-sm text-cyan-700 dark:text-cyan-300">DS3231 RTC — Waktu Akurat</span>
+                  </div>
+                  <div className="p-4">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                          <th className="text-left pb-2 font-semibold">Pin DS3231</th>
+                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
+                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-700 dark:text-gray-300">
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">VCC</td>
+                          <td className="py-1.5 font-mono text-red-500">3.3V</td>
+                          <td className="py-1.5">Tegangan input</td>
+                        </tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">GND</td>
+                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5">Ground</td>
+                        </tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">SDA</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">D5 (GPIO14)</td>
+                          <td className="py-1.5">I2C data (custom)</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold">SCL</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">D6 (GPIO12)</td>
+                          <td className="py-1.5">I2C clock (custom)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/10 rounded-lg p-2">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>I2C menggunakan pin <strong>custom</strong> (D5/D6), bukan pin default I2C Wemos (D1/D2). Modul DS3231 umumnya sudah punya pull-up internal.</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Relay */}
+                <div className="border border-yellow-200 dark:border-yellow-800/50 rounded-xl overflow-hidden">
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 px-4 py-2.5 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-yellow-500" />
+                    <span className="font-semibold text-sm text-yellow-700 dark:text-yellow-300">Relay 1 Channel — Kontrol Lampu UV</span>
+                  </div>
+                  <div className="p-4">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                          <th className="text-left pb-2 font-semibold">Pin Relay</th>
+                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
+                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-700 dark:text-gray-300">
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">VCC</td>
+                          <td className="py-1.5 font-mono text-red-500">5V</td>
+                          <td className="py-1.5">Dari pin 5V Wemos</td>
+                        </tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">GND</td>
+                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5">Ground</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold">IN</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">D7 (GPIO13)</td>
+                          <td className="py-1.5">Sinyal kontrol</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg p-2">
+                      <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span><strong>Active LOW</strong>: IN=LOW → relay ON (lampu menyala), IN=HIGH → relay OFF. Jadwal otomatis: <strong>18:00 ON</strong> — <strong>06:00 OFF</strong> (dikontrol DS3231).</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pembagi Tegangan Baterai */}
+                <div className="border border-green-200 dark:border-green-800/50 rounded-xl overflow-hidden">
+                  <div className="bg-green-50 dark:bg-green-900/20 px-4 py-2.5 flex items-center gap-2">
+                    <Battery className="w-4 h-4 text-green-500" />
+                    <span className="font-semibold text-sm text-green-700 dark:text-green-300">Pembagi Tegangan — Monitor Baterai</span>
+                  </div>
+                  <div className="p-4">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                          <th className="text-left pb-2 font-semibold">Komponen</th>
+                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
+                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-700 dark:text-gray-300">
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">V+ Baterai</td>
+                          <td className="py-1.5 font-mono">→ R1 (100kΩ) →</td>
+                          <td className="py-1.5">Resistor atas</td>
+                        </tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">Titik tengah</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">A0</td>
+                          <td className="py-1.5">Masuk ke ADC</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold">R2 (33kΩ)</td>
+                          <td className="py-1.5 font-mono text-gray-500">ke GND</td>
+                          <td className="py-1.5">Resistor bawah</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/10 rounded-lg p-2">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>A0 Wemos hanya baca <strong>0–1V</strong>. Pembagi tegangan R1=100kΩ &amp; R2=33kΩ menurunkan 4.2V baterai → ~1.04V. Formula kode: <code className="font-mono bg-green-100 dark:bg-green-900/30 px-1 rounded">raw × (4.2 / 1023)</code></span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ringkasan pin */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                  <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-2.5 flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-gray-500" />
+                    <span className="font-semibold text-sm text-gray-700 dark:text-gray-300">Ringkasan Pin Wemos D1 Mini</span>
+                  </div>
+                  <div className="p-4">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {[
+                        { pin: "D1", func: "Sensor IR (OUT)", color: "text-purple-600 dark:text-purple-400" },
+                        { pin: "D2", func: "DHT22 (DATA)", color: "text-orange-600 dark:text-orange-400" },
+                        { pin: "D5", func: "DS3231 (SDA)", color: "text-cyan-600 dark:text-cyan-400" },
+                        { pin: "D6", func: "DS3231 (SCL)", color: "text-cyan-600 dark:text-cyan-400" },
+                        { pin: "D7", func: "Relay (IN)", color: "text-yellow-600 dark:text-yellow-400" },
+                        { pin: "A0", func: "Baterai (ADC)", color: "text-green-600 dark:text-green-400" },
+                      ].map((item) => (
+                        <div key={item.pin} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg px-3 py-2">
+                          <span className="font-mono font-bold text-blue-600 dark:text-blue-400 w-7 shrink-0">{item.pin}</span>
+                          <span className={item.color}>{item.func}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 text-center shrink-0 rounded-b-2xl">
+                <button
+                  onClick={() => setIsWiringGuideOpen(false)}
+                  className="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  Tutup Panduan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Log Reset Modal */}
+        {isLogResetModalOpen && (
+          <div
+            className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"
+            onClick={(e) =>
+              e.target === e.currentTarget && setIsLogResetModalOpen(false)
+            }
+          >
+            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50">
+                <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <RotateCcw className="w-5 h-5 text-orange-500" />
+                  Reset Log Deteksi
+                </h3>
+                <button
+                  onClick={() => setIsLogResetModalOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-5">
+                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                  Semua entri pada tabel log deteksi sensor akan dihapus. Data
+                  tangkapan (jumlah ngengat) pada masing-masing node{" "}
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">
+                    tidak terpengaruh
+                  </span>
+                  .
+                </p>
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Jangkauan Reset
+                  </p>
+                  <div className="space-y-2">
+                    {(
+                      [
+                        {
+                          value: "dashboard" as const,
+                          label: "Dashboard saja",
+                          desc: "Tabel log dikosongkan, data di Google Sheets tidak berubah",
+                          disabled: false,
+                        },
+                        {
+                          value: "both" as const,
+                          label: "Dashboard + Database",
+                          desc:
+                            !isDemoMode && userProfile
+                              ? "Tabel log dikosongkan dan data log di Google Sheets juga dihapus"
+                              : "Memerlukan akun login di Mode Asli",
+                          disabled: isDemoMode || !userProfile,
+                        },
+                      ] as const
+                    ).map((opt) => (
+                      <label
+                        key={opt.value}
+                        onClick={() =>
+                          !opt.disabled && setLogResetScope(opt.value)
+                        }
+                        className={cn(
+                          "flex items-start gap-3 p-3 rounded-xl border-2 transition-colors",
+                          opt.disabled
+                            ? "border-gray-100 dark:border-gray-700/50 opacity-50 cursor-not-allowed"
+                            : "cursor-pointer",
+                          !opt.disabled && logResetScope === opt.value
+                            ? "border-orange-400 dark:border-orange-500 bg-orange-50 dark:bg-orange-900/20"
+                            : !opt.disabled
+                              ? "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                              : "",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="logResetScope"
+                          value={opt.value}
+                          checked={logResetScope === opt.value}
+                          onChange={() =>
+                            !opt.disabled && setLogResetScope(opt.value)
+                          }
+                          disabled={opt.disabled}
+                          className="accent-orange-500 mt-0.5"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                            {opt.label}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {opt.desc}
+                          </p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsLogResetConfirmOpen(true)}
+                  className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Lanjutkan Reset Log
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Log Reset Confirm Modal */}
+        {isLogResetConfirmOpen && (
+          <div className="fixed inset-0 bg-gray-900/60 dark:bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center">
+            <div className="bg-white dark:bg-gray-800 w-[85%] max-w-xs rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-6 text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center mx-auto">
+                  <AlertCircle className="w-9 h-9 text-orange-500" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-gray-800 dark:text-white text-lg mb-1">
+                    Reset Semua Log?
+                  </h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                    Seluruh entri log deteksi akan dihapus permanen
+                    {logResetScope === "both" && !isDemoMode && userProfile
+                      ? " dari dashboard dan Google Sheets"
+                      : " dari dashboard"}
+                    . Tindakan ini tidak dapat dibatalkan.
+                  </p>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setIsLogResetConfirmOpen(false)}
+                    disabled={isLogResetting}
+                    className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={executeLogReset}
+                    disabled={isLogResetting}
+                    className="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                  >
+                    {isLogResetting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-4 h-4" />
+                    )}
+                    {isLogResetting ? "Mereset..." : "Ya, Reset!"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reset Modal */}
+        {isResetModalOpen && (
+          <div
+            className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"
+            onClick={(e) =>
+              e.target === e.currentTarget && setIsResetModalOpen(false)
+            }
+          >
+            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50">
+                <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <RotateCcw className="w-5 h-5 text-orange-500" />
+                  Reset Tangkapan
+                </h3>
+                <button
+                  onClick={() => setIsResetModalOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-5">
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Pilih Node yang Direset
+                  </p>
+                  <div className="space-y-2">
+                    {(
+                      [
+                        {
+                          value: "A" as const,
+                          label: "Node A",
+                          sub: "UV 365nm",
+                          count: nodeA.uv365,
+                          badge:
+                            "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400",
+                          showWhen: "A" as const,
+                        },
+                        {
+                          value: "B" as const,
+                          label: "Node B",
+                          sub: "UV 395nm",
+                          count: nodeB.uv395,
+                          badge:
+                            "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400",
+                          showWhen: "B" as const,
+                        },
+                        {
+                          value: "both" as const,
+                          label: "Kedua Node",
+                          sub: "A + B",
+                          count: nodeA.uv365 + nodeB.uv395,
+                          badge:
+                            "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300",
+                          showWhen: null,
+                        },
+                      ] as const
+                    )
+                      .filter(
+                        (opt) =>
+                          opt.showWhen === null ||
+                          opt.showWhen === resetOriginNode,
+                      )
+                      .map((opt) => (
+                        <label
+                          key={opt.value}
+                          onClick={() => setResetTarget(opt.value)}
+                          className={cn(
+                            "flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors",
+                            resetTarget === opt.value
+                              ? "border-orange-400 dark:border-orange-500 bg-orange-50 dark:bg-orange-900/20"
+                              : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="resetTarget"
+                            value={opt.value}
+                            checked={resetTarget === opt.value}
+                            onChange={() => setResetTarget(opt.value)}
+                            className="accent-orange-500"
+                          />
+                          <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">
+                            {opt.label}{" "}
+                            <span className="text-gray-400 dark:text-gray-500 font-normal">
+                              ({opt.sub})
+                            </span>
+                          </span>
+                          <span
+                            className={cn(
+                              "text-xs font-bold px-2 py-1 rounded-full",
+                              opt.badge,
+                            )}
+                          >
+                            {opt.count}
+                          </span>
+                        </label>
+                      ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Jangkauan Reset
+                  </p>
+                  <div className="space-y-2">
+                    {(
+                      [
+                        {
+                          value: "dashboard" as const,
+                          label: "Dashboard saja",
+                          desc: "Tampilan direset, data Google Sheets tidak berubah",
+                        },
+                        {
+                          value: "both" as const,
+                          label: "Dashboard + Database",
+                          desc: "Tampilan direset dan data Google Sheets juga diperbarui",
+                        },
+                      ] as const
+                    ).map((opt) => (
+                      <label
+                        key={opt.value}
+                        onClick={() => setResetScope(opt.value)}
+                        className={cn(
+                          "flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors",
+                          resetScope === opt.value
+                            ? "border-orange-400 dark:border-orange-500 bg-orange-50 dark:bg-orange-900/20"
+                            : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="resetScope"
+                          value={opt.value}
+                          checked={resetScope === opt.value}
+                          onChange={() => setResetScope(opt.value)}
+                          className="accent-orange-500 mt-0.5"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                            {opt.label}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {opt.desc}
+                          </p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsResetConfirmOpen(true)}
+                  className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Lanjutkan Reset
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reset Confirm Modal */}
+        {isResetConfirmOpen && (
+          <div className="fixed inset-0 bg-gray-900/60 dark:bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center">
+            <div className="bg-white dark:bg-gray-800 w-[85%] max-w-xs rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-6 text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center mx-auto">
+                  <AlertCircle className="w-9 h-9 text-orange-500" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-gray-800 dark:text-white text-lg mb-1">
+                    Yakin Mereset?
+                  </h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                    Tangkapan{" "}
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">
+                      {resetTarget === "A"
+                        ? "Node A (UV 365nm)"
+                        : resetTarget === "B"
+                          ? "Node B (UV 395nm)"
+                          : "kedua node"}
+                    </span>{" "}
+                    akan direset ke{" "}
+                    <span className="font-bold text-orange-600 dark:text-orange-400">
+                      0
+                    </span>
+                    {resetScope === "both"
+                      ? " dan data Google Sheets juga akan diperbarui"
+                      : ""}
+                    . Tindakan ini tidak dapat dibatalkan.
+                  </p>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setIsResetConfirmOpen(false)}
+                    disabled={isResetting}
+                    className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={executeReset}
+                    disabled={isResetting}
+                    className="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                  >
+                    {isResetting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-4 h-4" />
+                    )}
+                    {isResetting ? "Mereset..." : "Ya, Reset!"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sheet Manager Modal */}
+        {isSheetManagerOpen && (
+          <div
+            className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity"
+            onClick={(e) =>
+              e.target === e.currentTarget && setIsSheetManagerOpen(false)
+            }
+          >
+            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-md rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden max-h-[85vh] flex flex-col">
+              <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 shrink-0">
+                <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                  <Database className="w-5 h-5 text-red-600 dark:text-red-400" />
+                  Kelola Sheet Database
+                </h3>
+                <button
+                  onClick={() => setIsSheetManagerOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto flex-1 space-y-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Scan Google Spreadsheet untuk menemukan sheet yang tidak
+                  dikenali sistem. Sheet sisa percobaan atau sync lama dapat
+                  dihapus di sini.
+                </p>
+                <button
+                  onClick={handleScanSheets}
+                  disabled={isScanning}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                >
+                  {isScanning ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-4 h-4" />
+                  )}
+                  {isScanning ? "Memindai..." : "Scan Sheet Sekarang"}
+                </button>
+
+                {sheetScanResult && (
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                        Sheet Aktif Sistem ({sheetScanResult.used.length})
+                      </h4>
+                      <div className="space-y-1 max-h-28 overflow-y-auto">
+                        {sheetScanResult.used.map((name) => (
+                          <div
+                            key={name}
+                            className="text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 rounded-lg font-mono"
+                          >
+                            {name}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                        Sheet Tidak Terpakai ({sheetScanResult.unused.length})
+                      </h4>
+                      {sheetScanResult.unused.length === 0 ? (
+                        <p className="text-xs text-gray-400 dark:text-gray-500 italic px-3 py-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+                          Tidak ada sheet yang perlu dihapus. Database sudah
+                          bersih.
+                        </p>
+                      ) : (
+                        <div className="space-y-1 max-h-40 overflow-y-auto">
+                          {sheetScanResult.unused.map((s) => (
+                            <label
+                              key={s.name}
+                              className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedSheetsToDelete.includes(
+                                  s.name,
+                                )}
+                                onChange={(e) => {
+                                  setSelectedSheetsToDelete((prev) =>
+                                    e.target.checked
+                                      ? [...prev, s.name]
+                                      : prev.filter((n) => n !== s.name),
+                                  );
+                                }}
+                                className="accent-red-600 w-3.5 h-3.5 shrink-0"
+                              />
+                              <span className="text-red-700 dark:text-red-400 font-mono flex-1 truncate">
+                                {s.name}
+                              </span>
+                              <span className="text-gray-400 dark:text-gray-500 shrink-0">
+                                {s.rows} baris
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {sheetScanResult.unused.length > 0 && (
+                      <button
+                        onClick={handleDeleteSelectedSheets}
+                        disabled={
+                          isDeletingSheets ||
+                          selectedSheetsToDelete.length === 0
+                        }
+                        className="w-full py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                      >
+                        {isDeletingSheets ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <X className="w-4 h-4" />
+                        )}
+                        {isDeletingSheets
+                          ? "Menghapus..."
+                          : `Hapus ${selectedSheetsToDelete.length} Sheet Terpilih`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Login Modal */}
+        <AnimatePresence>
+          {isLoginModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setLoginModalOpen(false);
+                }
+              }}
+            >
+              <motion.div
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden"
-            >
+              >
                 <div className="p-6 sm:p-8">
-                    <div className="flex justify-between items-center mb-8">
-                        <h3 className="font-extrabold text-2xl text-gray-900 dark:text-white tracking-tight">
-                            {loginMode === 'login' ? 'Masuk' : 'Daftar Akun'}
-                        </h3>
-                        <button onClick={() => setLoginModalOpen(false)} className="text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 p-2 rounded-full transition-colors" disabled={loginSuccess}>
-                            <X className="w-5 h-5" />
-                        </button>
-                    </div>
-                    {loginSuccess ? (
-                        <motion.div 
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="py-12 flex flex-col items-center justify-center"
-                        >
-                            <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
-                                <CheckCircle2 className="w-10 h-10" />
-                            </div>
-                            <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Berhasil!</h4>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 text-center">Redirecting...</p>
-                        </motion.div>
-                    ) : (
-                    <>
-                    {loginError && (
-                        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2 text-red-600 dark:text-red-400 text-sm">
-                            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                            <span>{loginError}</span>
-                        </div>
-                    )}
-                    <form onSubmit={(e) => { e.preventDefault(); submitAuth(); }} className="space-y-5 max-h-[70vh] overflow-y-auto px-1 scrollbar-hide">
-                        <div>
-                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Email</label>
-                            <input 
-                                type="email" 
-                                value={loginEmail} 
-                                onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }} 
-                                className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 outline-none transition-all" 
-                                placeholder="nama@contoh.com"
-                                required
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Password</label>
-                            <div className="relative">
-                                <input 
-                                    type={showPassword ? "text" : "password"} 
-                                    value={loginPassword} 
-                                    onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }} 
-                                    className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 pr-11 outline-none transition-all" 
-                                    placeholder="••••••••"
-                                    required
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute inset-y-0 right-2 flex items-center p-2 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-lg"
-                                >
-                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                </button>
-                            </div>
-                            {loginMode === 'register' && (
-                                <div className="mt-4 space-y-2 animate-in fade-in duration-300">
-                                    <div className="flex gap-1 h-1.5 w-full">
-                                        {[1, 2, 3, 4].map((step) => (
-                                            <div 
-                                                key={step} 
-                                                className={`h-full flex-1 rounded-full transition-colors duration-300 ${getPasswordStrength(loginPassword) >= step ? getStrengthColor(getPasswordStrength(loginPassword)) : 'bg-gray-200 dark:bg-gray-800'}`}
-                                            ></div>
-                                        ))}
-                                    </div>
-                                    <div className="flex items-center justify-between mt-1">
-                                       <span className={`text-[10px] sm:text-xs font-semibold ${getPasswordStrength(loginPassword) === 4 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                                          Kekuatan: {getStrengthLabel(getPasswordStrength(loginPassword))}
-                                       </span>
-                                       <span className="text-[10px] text-gray-400 max-w-[200px] text-right">
-                                          Huruf besar, kecil, angka & simbol.
-                                       </span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        {loginMode === 'register' && (
-                            <div className="space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Nama Lengkap</label>
-                                    <input 
-                                        type="text" 
-                                        value={loginName} 
-                                        onChange={(e) => setLoginName(e.target.value)} 
-                                        className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 outline-none transition-all" 
-                                        placeholder="Opsional"
-                                    />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <ImageUpload 
-                                        label="Foto Profil" 
-                                        icon={Camera} 
-                                        value={loginPhoto} 
-                                        onImageUploaded={setLoginPhoto} 
-                                        type="photo" 
-                                    />
-                                    <ImageUpload 
-                                        label="Foto Sampul" 
-                                        icon={ImageIcon} 
-                                        value={loginCover} 
-                                        onImageUploaded={setLoginCover} 
-                                        type="cover" 
-                                    />
-                                </div>
-                            </div>
-                        )}
-                        <button type="submit" disabled={isAuthLoading} className="w-full mt-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all hover:shadow-lg hover:shadow-emerald-600/20 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 disabled:hover:scale-100">
-                            {isAuthLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
-                            {loginMode === 'login' ? 'Masuk' : 'Daftar Sekarang'}
-                        </button>
-                    </form>
-                    <div className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                        {loginMode === 'login' ? "Belum punya akun?" : "Sudah punya akun?"}{' '}
-                        <button type="button" onClick={() => { setLoginMode(loginMode === 'login' ? 'register' : 'login'); setLoginError(''); }} className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold transition-colors underline decoration-2 underline-offset-4" disabled={loginSuccess}>
-                            {loginMode === 'login' ? 'Daftar di sini' : 'Masuk di sini'}
-                        </button>
-                    </div>
-                    </>
-                    )}
-                </div>
-            </motion.div>
-        </motion.div>
-      )}
-      </AnimatePresence>
-
-      {/* Profile Modal */}
-      {isProfileOpen && (
-          <div className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity" onClick={(e) => {
-              if(e.target === e.currentTarget) {
-                 setProfileOpen(false);
-                 setIsEditingProfile(false);
-              }
-          }}>
-              <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transform scale-100 transition-transform flex flex-col max-h-[90vh]">
-                  
-                  {isEditingProfile ? (
-                     <div className="flex flex-col overflow-hidden">
-                        <div className="flex justify-between items-center p-5 sm:p-6 border-b border-gray-100 dark:border-gray-700/50 shrink-0">
-                            <h3 className="font-bold text-lg text-gray-900 dark:text-white">Edit Profil</h3>
-                            <button onClick={() => setIsEditingProfile(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                               <X className="w-5 h-5"/>
-                            </button>
-                        </div>
-                        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nama Lengkap</label>
-                                <input type="text" value={editName} onChange={e=>setEditName(e.target.value)} className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none" />
-                            </div>
-                            <ImageUpload 
-                                label="Foto Profil" 
-                                icon={Camera} 
-                                value={editPhotoUrl} 
-                                onImageUploaded={setEditPhotoUrl} 
-                                type="photo" 
-                            />
-                            <ImageUpload 
-                                label="Foto Sampul" 
-                                icon={ImageIcon} 
-                                value={editCoverUrl} 
-                                onImageUploaded={setEditCoverUrl} 
-                                type="cover" 
-                            />
-                            
-                            <hr className="border-gray-200 dark:border-gray-700 my-2" />
-                            
-                            <div>
-                                <label className="flex items-center justify-between cursor-pointer">
-                                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Notifikasi</span>
-                                  <div className="relative">
-                                    <input type="checkbox" className="sr-only" checked={editNotificationsEnabled} onChange={(e) => setEditNotificationsEnabled(e.target.checked)} />
-                                    <div className={`block w-10 h-6 rounded-full transition-colors ${editNotificationsEnabled ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${editNotificationsEnabled ? 'transform translate-x-4' : ''}`}></div>
-                                  </div>
-                                </label>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Satuan Suhu Default</label>
-                                <select 
-                                    value={editTemperatureUnit} 
-                                    onChange={e=>setEditTemperatureUnit(e.target.value as 'C'|'F')} 
-                                    className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none"
-                                >
-                                    <option value="C">Celsius (°C)</option>
-                                    <option value="F">Fahrenheit (°F)</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Satuan Tegangan Default</label>
-                                <select 
-                                    value={editVoltageUnit} 
-                                    onChange={e=>setEditVoltageUnit(e.target.value as 'V'|'mV')} 
-                                    className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none"
-                                >
-                                    <option value="V">Volt (V)</option>
-                                    <option value="mV">Milivolt (mV)</option>
-                                </select>
-                            </div>
-
-                            <button onClick={handleSaveProfile} className="w-full mt-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
-                                <Save className="w-4 h-4" /> Simpan Perubahan
-                            </button>
-                        </div>
-                     </div>
+                  <div className="flex justify-between items-center mb-8">
+                    <h3 className="font-extrabold text-2xl text-gray-900 dark:text-white tracking-tight">
+                      {loginMode === "login" ? "Masuk" : "Daftar Akun"}
+                    </h3>
+                    <button
+                      onClick={() => setLoginModalOpen(false)}
+                      className="text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
+                      disabled={loginSuccess}
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  {loginSuccess ? (
+                    <motion.div
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="py-12 flex flex-col items-center justify-center"
+                    >
+                      <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
+                        <CheckCircle2 className="w-10 h-10" />
+                      </div>
+                      <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                        Berhasil!
+                      </h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                        Redirecting...
+                      </p>
+                    </motion.div>
                   ) : (
                     <>
-                      <div 
-                         className="relative w-full aspect-[3/1] bg-gray-200 dark:bg-gray-700 flex justify-center bg-cover bg-center shrink-0"
-                         style={userProfile?.coverUrl ? { backgroundImage: `url(${userProfile.coverUrl})` } : { backgroundImage: 'linear-gradient(to right, #10b981, #14b8a6)' }}
+                      {loginError && (
+                        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2 text-red-600 dark:text-red-400 text-sm">
+                          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                          <span>{loginError}</span>
+                        </div>
+                      )}
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          submitAuth();
+                        }}
+                        className="space-y-5 max-h-[70vh] overflow-y-auto px-1 scrollbar-hide"
                       >
-                          <button onClick={() => setProfileOpen(false)} className="absolute top-3 right-3 text-white hover:bg-black/20 p-1.5 rounded-full backdrop-blur-sm transition-colors z-10">
-                              <X className="w-5 h-5 drop-shadow-md"/>
-                          </button>
-                          <button onClick={handleOpenEditProfile} className="absolute top-3 left-3 text-white hover:bg-black/20 p-1.5 rounded-full backdrop-blur-sm transition-colors z-10" title="Edit Profil">
-                              <Edit2 className="w-4 h-4 drop-shadow-md"/>
-                          </button>
-                          <div className="absolute -bottom-10 border-4 border-white dark:border-gray-800 rounded-full bg-white dark:bg-gray-800 shadow-md">
-                              <img src={userProfile.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.displayName || 'User')}`} alt="avatar" className="w-20 h-20 rounded-full object-cover bg-white dark:bg-gray-800" />
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
+                            Email
+                          </label>
+                          <input
+                            type="email"
+                            value={loginEmail}
+                            onChange={(e) => {
+                              setLoginEmail(e.target.value);
+                              setLoginError("");
+                            }}
+                            className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 outline-none transition-all"
+                            placeholder="nama@contoh.com"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
+                            Password
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showPassword ? "text" : "password"}
+                              value={loginPassword}
+                              onChange={(e) => {
+                                setLoginPassword(e.target.value);
+                                setLoginError("");
+                              }}
+                              className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 pr-11 outline-none transition-all"
+                              placeholder="••••••••"
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute inset-y-0 right-2 flex items-center p-2 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-lg"
+                            >
+                              {showPassword ? (
+                                <EyeOff className="w-5 h-5" />
+                              ) : (
+                                <Eye className="w-5 h-5" />
+                              )}
+                            </button>
                           </div>
-                      </div>
-                      <div className="pt-14 pb-6 px-6 text-center">
-                          <h3 className="font-bold text-xl text-gray-900 dark:text-white">{userProfile.displayName || "User"}</h3>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{userProfile.email}</p>
-                          
-                          <div className="space-y-3">
-                              <button onClick={() => { 
-                                setIsLogoutConfirmOpen(true);
-                              }} className="w-full py-2.5 bg-gray-50 text-red-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-red-400 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
-                                  Logout / Keluar Akun
-                              </button>
-                              <button onClick={() => { setProfileOpen(false); }} className="w-full py-2.5 bg-gray-50 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200  border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
-                                  Tutup
-                              </button>
+                          {loginMode === "register" && (
+                            <div className="mt-4 space-y-2 animate-in fade-in duration-300">
+                              <div className="flex gap-1 h-1.5 w-full">
+                                {[1, 2, 3, 4].map((step) => (
+                                  <div
+                                    key={step}
+                                    className={`h-full flex-1 rounded-full transition-colors duration-300 ${getPasswordStrength(loginPassword) >= step ? getStrengthColor(getPasswordStrength(loginPassword)) : "bg-gray-200 dark:bg-gray-800"}`}
+                                  ></div>
+                                ))}
+                              </div>
+                              <div className="flex items-center justify-between mt-1">
+                                <span
+                                  className={`text-[10px] sm:text-xs font-semibold ${getPasswordStrength(loginPassword) === 4 ? "text-emerald-600 dark:text-emerald-400" : "text-gray-500 dark:text-gray-400"}`}
+                                >
+                                  Kekuatan:{" "}
+                                  {getStrengthLabel(
+                                    getPasswordStrength(loginPassword),
+                                  )}
+                                </span>
+                                <span className="text-[10px] text-gray-400 max-w-[200px] text-right">
+                                  Huruf besar, kecil, angka & simbol.
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {loginMode === "register" && (
+                          <div className="space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <div>
+                              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
+                                Nama Lengkap
+                              </label>
+                              <input
+                                type="text"
+                                value={loginName}
+                                onChange={(e) => setLoginName(e.target.value)}
+                                className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 outline-none transition-all"
+                                placeholder="Opsional"
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <ImageUpload
+                                label="Foto Profil"
+                                icon={Camera}
+                                value={loginPhoto}
+                                onImageUploaded={setLoginPhoto}
+                                type="photo"
+                              />
+                              <ImageUpload
+                                label="Foto Sampul"
+                                icon={ImageIcon}
+                                value={loginCover}
+                                onImageUploaded={setLoginCover}
+                                type="cover"
+                              />
+                            </div>
                           </div>
+                        )}
+                        <button
+                          type="submit"
+                          disabled={isAuthLoading}
+                          className="w-full mt-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all hover:shadow-lg hover:shadow-emerald-600/20 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 disabled:hover:scale-100"
+                        >
+                          {isAuthLoading ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <LogIn className="w-5 h-5" />
+                          )}
+                          {loginMode === "login" ? "Masuk" : "Daftar Sekarang"}
+                        </button>
+                      </form>
+                      <div className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        {loginMode === "login"
+                          ? "Belum punya akun?"
+                          : "Sudah punya akun?"}{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLoginMode(
+                              loginMode === "login" ? "register" : "login",
+                            );
+                            setLoginError("");
+                          }}
+                          className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold transition-colors underline decoration-2 underline-offset-4"
+                          disabled={loginSuccess}
+                        >
+                          {loginMode === "login"
+                            ? "Daftar di sini"
+                            : "Masuk di sini"}
+                        </button>
                       </div>
                     </>
                   )}
-              </div>
-          </div>
-      )}
-
-      {/* Logout Confirm Dialog */}
-      {isLogoutConfirmOpen && (
-        <div className="fixed inset-0 bg-gray-900/60 dark:bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center transition-opacity" onClick={(e) => {
-            if(e.target === e.currentTarget) setIsLogoutConfirmOpen(false);
-        }}>
-            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-6 text-center">
-                    <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-500 mx-auto flex items-center justify-center mb-4">
-                        <RotateCcw className="w-8 h-8" />
-                    </div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Konfirmasi Logout</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Apakah Anda yakin ingin keluar dari akun ini? Sesi Anda akan dihentikan.</p>
-                    <div className="flex gap-3">
-                        <button onClick={() => setIsLogoutConfirmOpen(false)} className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-semibold text-sm transition-colors">
-                            Batal
-                        </button>
-                        <button onClick={() => {
-                            setUserProfile(null);
-                            localStorage.removeItem('userProfile');
-                            setIsLogoutConfirmOpen(false);
-                            setProfileOpen(false);
-                        }} className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm transition-colors shadow-sm focus:ring-4 focus:ring-red-200 dark:focus:ring-red-900">
-                            Ya, Keluar
-                        </button>
-                    </div>
                 </div>
-            </div>
-        </div>
-      )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
+        {/* Profile Modal */}
+        {isProfileOpen && (
+          <div
+            className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center transition-opacity"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setProfileOpen(false);
+                setIsEditingProfile(false);
+              }
+            }}
+          >
+            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transform scale-100 transition-transform">
+              {isEditingProfile ? (
+                <div className="flex flex-col max-h-[85vh]">
+                  <div className="flex justify-between items-center p-5 sm:p-6 border-b border-gray-100 dark:border-gray-700/50 shrink-0">
+                    <h3 className="font-bold text-lg text-gray-900 dark:text-white">
+                      Edit Profil
+                    </h3>
+                    <button
+                      onClick={() => setIsEditingProfile(false)}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="p-5 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Nama Lengkap
+                      </label>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none"
+                      />
+                    </div>
+                    <ImageUpload
+                      label="Foto Profil"
+                      icon={Camera}
+                      value={editPhotoUrl}
+                      onImageUploaded={setEditPhotoUrl}
+                      type="photo"
+                    />
+                    <ImageUpload
+                      label="Foto Sampul"
+                      icon={ImageIcon}
+                      value={editCoverUrl}
+                      onImageUploaded={setEditCoverUrl}
+                      type="cover"
+                    />
+
+                    <hr className="border-gray-200 dark:border-gray-700 my-2" />
+
+                    <div>
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Notifikasi
+                        </span>
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={editNotificationsEnabled}
+                            onChange={(e) =>
+                              setEditNotificationsEnabled(e.target.checked)
+                            }
+                          />
+                          <div
+                            className={`block w-10 h-6 rounded-full transition-colors ${editNotificationsEnabled ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600"}`}
+                          ></div>
+                          <div
+                            className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${editNotificationsEnabled ? "transform translate-x-4" : ""}`}
+                          ></div>
+                        </div>
+                      </label>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Satuan Suhu Default
+                      </label>
+                      <select
+                        value={editTemperatureUnit}
+                        onChange={(e) =>
+                          setEditTemperatureUnit(e.target.value as "C" | "F")
+                        }
+                        className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none"
+                      >
+                        <option value="C">Celsius (°C)</option>
+                        <option value="F">Fahrenheit (°F)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Satuan Tegangan Default
+                      </label>
+                      <select
+                        value={editVoltageUnit}
+                        onChange={(e) =>
+                          setEditVoltageUnit(e.target.value as "V" | "mV")
+                        }
+                        className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block p-2.5 outline-none"
+                      >
+                        <option value="V">Volt (V)</option>
+                        <option value="mV">Milivolt (mV)</option>
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={handleSaveProfile}
+                      className="w-full mt-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Save className="w-4 h-4" /> Simpan Perubahan
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="relative w-full aspect-[3/1] bg-gray-200 dark:bg-gray-700 flex justify-center bg-cover bg-center shrink-0"
+                    style={
+                      userProfile?.coverUrl
+                        ? { backgroundImage: `url(${userProfile.coverUrl})` }
+                        : {
+                            backgroundImage:
+                              "linear-gradient(to right, #10b981, #14b8a6)",
+                          }
+                    }
+                  >
+                    <button
+                      onClick={() => setProfileOpen(false)}
+                      className="absolute top-3 right-3 text-white hover:bg-black/20 p-1.5 rounded-full backdrop-blur-sm transition-colors z-10"
+                    >
+                      <X className="w-5 h-5 drop-shadow-md" />
+                    </button>
+                    <button
+                      onClick={handleOpenEditProfile}
+                      className="absolute top-3 left-3 text-white hover:bg-black/20 p-1.5 rounded-full backdrop-blur-sm transition-colors z-10"
+                      title="Edit Profil"
+                    >
+                      <Edit2 className="w-4 h-4 drop-shadow-md" />
+                    </button>
+                    <div className="absolute -bottom-10 border-4 border-white dark:border-gray-800 rounded-full bg-white dark:bg-gray-800 shadow-md">
+                      <img
+                        src={
+                          userProfile?.photoURL ||
+                          `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.displayName || "User")}`
+                        }
+                        alt="avatar"
+                        className="w-20 h-20 rounded-full object-cover bg-white dark:bg-gray-800"
+                      />
+                    </div>
+                  </div>
+                  <div className="pt-14 pb-6 px-6 text-center">
+                    <h3 className="font-bold text-xl text-gray-900 dark:text-white">
+                      {userProfile?.displayName || "User"}
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                      {userProfile?.email}
+                    </p>
+
+                    <div className="space-y-3">
+                      <button
+                        onClick={() => {
+                          setIsLogoutConfirmOpen(true);
+                        }}
+                        className="w-full py-2.5 bg-gray-50 text-red-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-red-400 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                      >
+                        Logout / Keluar Akun
+                      </button>
+                      <button
+                        onClick={() => {
+                          setProfileOpen(false);
+                        }}
+                        className="w-full py-2.5 bg-gray-50 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200  border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Buffer Flush Toast — muncul saat data offline berhasil masuk */}
+        <AnimatePresence>
+          {bufferToast && (
+            <motion.div
+              key={bufferToast.id}
+              initial={{ opacity: 0, y: 40, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              className="fixed bottom-6 right-4 z-[200] flex items-start gap-3 bg-emerald-700 dark:bg-emerald-800 text-white rounded-2xl shadow-2xl px-5 py-4 max-w-xs border border-emerald-500/40"
+            >
+              <div className="mt-0.5 shrink-0 w-8 h-8 rounded-full bg-emerald-500/30 flex items-center justify-center">
+                <Database className="w-4 h-4 text-emerald-200" />
+              </div>
+              <div>
+                <p className="font-bold text-sm leading-tight">
+                  Data Buffer Diterima!
+                </p>
+                <p className="text-emerald-200 text-xs mt-0.5 leading-snug">
+                  {bufferToast.count} deteksi offline ({bufferToast.node})
+                  berhasil masuk ke dashboard.
+                </p>
+              </div>
+              <button
+                onClick={() => setBufferToast(null)}
+                className="ml-auto text-emerald-300 hover:text-white shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Logout Confirm Dialog */}
+        {isLogoutConfirmOpen && (
+          <div
+            className="fixed inset-0 bg-gray-900/60 dark:bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center transition-opacity"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsLogoutConfirmOpen(false);
+            }}
+          >
+            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="p-6 text-center">
+                <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-500 mx-auto flex items-center justify-center mb-4">
+                  <RotateCcw className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                  Konfirmasi Logout
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                  Apakah Anda yakin ingin keluar dari akun ini? Sesi Anda akan
+                  dihentikan.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsLogoutConfirmOpen(false)}
+                    className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-semibold text-sm transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={() => {
+                      setUserProfile(null);
+                      localStorage.removeItem("userProfile");
+                      setIsLogoutConfirmOpen(false);
+                      setProfileOpen(false);
+                    }}
+                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm transition-colors shadow-sm focus:ring-4 focus:ring-red-200 dark:focus:ring-red-900"
+                  >
+                    Ya, Keluar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
