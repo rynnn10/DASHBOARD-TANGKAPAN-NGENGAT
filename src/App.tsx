@@ -754,12 +754,6 @@ export default function App() {
   // Auth & Profile States
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
-  const [pendingProfile, setPendingProfile] = useState<{
-    displayName: string;
-    email: string;
-    photoURL: string;
-    coverUrl: string;
-  } | null>(null);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -781,8 +775,12 @@ export default function App() {
     temperatureUnit?: "C" | "F";
     voltageUnit?: "V" | "mV";
   } | null>(() => {
-    const saved = localStorage.getItem("userProfile");
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem("userProfile");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
 
   useEffect(() => {
@@ -793,13 +791,10 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [isDemoMode, userProfile]);
 
-  // Tutup modal login setelah animasi sukses — pakai useEffect agar andal di mobile
+  // Tutup modal login setelah animasi sukses — profil sudah disimpan sebelumnya
   useEffect(() => {
-    if (!loginSuccess || !pendingProfile) return;
+    if (!loginSuccess) return;
     const timer = setTimeout(() => {
-      setUserProfile(pendingProfile);
-      localStorage.setItem("userProfile", JSON.stringify(pendingProfile));
-      setPendingProfile(null);
       setLoginModalOpen(false);
       setLoginSuccess(false);
       setLoginEmail("");
@@ -807,7 +802,7 @@ export default function App() {
       setLoginName("");
     }, 1500);
     return () => clearTimeout(timer);
-  }, [loginSuccess, pendingProfile]);
+  }, [loginSuccess]);
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState("");
@@ -1956,6 +1951,30 @@ export default function App() {
     return "Sangat Kuat";
   };
 
+  const logLoginActivity = async (email: string, demoMode: boolean) => {
+    if (!SCRIPT_URL) return;
+    try {
+      const ipRes = await fetch("https://ipapi.co/json/");
+      const ipData = await ipRes.json();
+      await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "saveLoginLog",
+          email,
+          ip: ipData.ip || "-",
+          city: ipData.city || "-",
+          country: ipData.country_name || "-",
+          userAgent: navigator.userAgent,
+          isDemoMode: demoMode,
+          status: "success",
+        }),
+      });
+    } catch {
+      // Log gagal tidak perlu ditampilkan ke user
+    }
+  };
+
   const submitAuth = async () => {
     setLoginError("");
     if (!loginEmail || !loginPassword) {
@@ -1999,8 +2018,17 @@ export default function App() {
           photoURL: result.data ? result.data.photoURL || "" : "",
           coverUrl: result.data ? result.data.coverUrl || "" : "",
         };
-        setPendingProfile(profile);  // disimpan dulu, useEffect yang eksekusi setelah animasi
+        // Simpan profil & localStorage LANGSUNG — tidak menunggu animasi selesai
+        // agar refresh halaman sebelum timer tidak menyebabkan logout
+        setUserProfile(profile);
+        try {
+          localStorage.setItem("userProfile", JSON.stringify(profile));
+        } catch {
+          // localStorage mungkin diblokir browser tertentu (mode privat, dll)
+        }
         setLoginSuccess(true);
+        // Kirim log aktivitas login secara async (tidak blokir UX)
+        logLoginActivity(loginEmail, isDemoMode);
       } else {
         setLoginError(result.message || "Email atau password salah.");
       }
@@ -2888,7 +2916,7 @@ export default function App() {
                           key={m}
                           onClick={() => setEffectViewMode(m)}
                           className={cn(
-                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors whitespace-nowrap text-center",
+                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
                             effectViewMode === m
                               ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800"
                               : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
@@ -4606,7 +4634,7 @@ export default function App() {
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"
               onClick={(e) => {
-                if (e.target === e.currentTarget) {
+                if (!loginSuccess && e.target === e.currentTarget) {
                   setLoginModalOpen(false);
                 }
               }}

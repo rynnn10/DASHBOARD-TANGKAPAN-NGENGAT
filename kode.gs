@@ -111,7 +111,32 @@ function doPost(e) {
     }
 
     // ============================================
-    // 2. FITUR LOG, GRAFIK & NOTIFIKASI
+    // 2. LOG AKTIVITAS LOGIN
+    // ============================================
+    if (data.action === "saveLoginLog") {
+      var sLog = sheet.getSheetByName("Log_Login") || sheet.insertSheet("Log_Login");
+      if (sLog.getLastRow() === 0) {
+        sLog.appendRow(["Waktu", "Email", "IP Publik", "Kota", "Negara", "Perangkat/Browser", "Mode", "Status"]);
+        sLog.setFrozenRows(1);
+        sLog.getRange(1, 1, 1, 8).setFontWeight("bold");
+      }
+      sLog.appendRow([
+        new Date().toLocaleString("id-ID"),
+        data.email || "-",
+        data.ip || "-",
+        data.city || "-",
+        data.country || "-",
+        data.userAgent || "-",
+        data.isDemoMode ? "Demo" : "Asli",
+        data.status || "success",
+      ]);
+      return ContentService.createTextOutput(
+        JSON.stringify({ status: "success", message: "Login log tersimpan!" }),
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ============================================
+    // 3. FITUR LOG, GRAFIK & NOTIFIKASI
     // ============================================
     if (data.action === "syncData" || data.action === "fetchData") {
       // JIKA INI SINKRONISASI DARI WEB -> SIMPAN KE SPREADSHEET (Terpisah per User)
