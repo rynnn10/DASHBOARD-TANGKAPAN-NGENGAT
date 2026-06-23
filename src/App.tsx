@@ -821,7 +821,7 @@ export default function App() {
   const [dhtTimeRange, setDhtTimeRange] = useState<
     "hari" | "minggu" | "bulan" | "tahun"
   >("hari");
-  const [dhtTimeDuration, setDhtTimeDuration] = useState<string>("hari_ini");
+  const [dhtTimeDuration, setDhtTimeDuration] = useState<string>("7_hari");
 
   // Signal untuk memicu auto-sync setelah data buffer IR tiba
   const [bufferFlushSignal, setBufferFlushSignal] = useState(0);
@@ -835,6 +835,24 @@ export default function App() {
     ];
     return buildDhtChartFromHistory(merged, dhtTimeRange, dhtTimeDuration);
   }, [dhtHistoryAll, dhtHistory, dhtTimeRange, dhtTimeDuration]);
+
+  // Rata-rata suhu & kelembaban dari seluruh data yang tersedia
+  const rataRataEnv = React.useMemo(() => {
+    const storedTs = new Set(dhtHistoryAll.map(h => h.timestamp));
+    const merged = [
+      ...dhtHistoryAll,
+      ...dhtHistory.filter(h => !storedTs.has(h.timestamp)),
+    ];
+    if (!merged.length) return null;
+    const aItems = merged.filter(h => h.node === 'A');
+    const bItems = merged.filter(h => h.node === 'B');
+    const avg = (arr: number[]) =>
+      arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 10) / 10 : null;
+    return {
+      A: { temp: avg(aItems.map(h => h.temp)), hum: avg(aItems.map(h => h.humidity)), count: aItems.length },
+      B: { temp: avg(bItems.map(h => h.temp)), hum: avg(bItems.map(h => h.humidity)), count: bItems.length },
+    };
+  }, [dhtHistoryAll, dhtHistory]);
 
   const [isDemoMode, setIsDemoMode] = useState(
     () => localStorage.getItem("isDemoMode") !== "false",
@@ -1504,39 +1522,6 @@ export default function App() {
   }, [nodeA.uv365, nodeB.uv395, notifPermission, isDemoMode, sendConfigToSW]);
 
   // 1. TAMBAHKAN INI: Fungsi Fetch Data awal dari Google Sheet
-  const [isDhtLoading, setIsDhtLoading] = useState(false);
-
-  const fetchLingkunganData = React.useCallback(async () => {
-    if (isDemoMode || !userProfile || !SCRIPT_URL) return;
-    setIsDhtLoading(true);
-    try {
-      const response = await fetch(SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          action: "fetchData",
-          email: userProfile.email,
-          isDemoMode: false,
-        }),
-      });
-      const result = await response.json();
-      if (result.status === "success" && result.data) {
-        if (result.data.lingkunganHistory) {
-          setDhtHistoryAll(result.data.lingkunganHistory);
-        }
-        if (result.data.nodeA) setNodeA(result.data.nodeA);
-        if (result.data.nodeB) setNodeB(result.data.nodeB);
-        if (result.data.logs) setLogs(result.data.logs);
-        if (result.data.chartData && result.data.chartData.length > 0) setChartData(result.data.chartData);
-        if (result.data.effectChartData) setEffectChartData(result.data.effectChartData);
-      }
-    } catch (e) {
-      console.error("Gagal menarik data lingkungan:", e);
-    } finally {
-      setIsDhtLoading(false);
-    }
-  }, [userProfile, isDemoMode]);
-
   useEffect(() => {
     // Jika mode demo atau belum login, hentikan
     if (isDemoMode || !userProfile || !SCRIPT_URL) return;
@@ -3448,27 +3433,8 @@ export default function App() {
                 <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                   <Wind className="w-5 h-5 text-cyan-500" />
                   Grafik Suhu &amp; Kelembaban
-                  {!isDemoMode && (
-                    <span className="text-[10px] font-normal text-gray-400 dark:text-gray-500 ml-1">
-                      {dhtHistoryAll.length > 0
-                        ? `${dhtHistoryAll.length + dhtHistory.length} titik data`
-                        : dhtHistory.length > 0
-                        ? `${dhtHistory.length} titik (sesi ini)`
-                        : "belum ada data"}
-                    </span>
-                  )}
                 </h3>
-                <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
-                  {!isDemoMode && (
-                    <button
-                      onClick={fetchLingkunganData}
-                      disabled={isDhtLoading}
-                      title="Muat ulang data dari Google Sheet"
-                      className="p-1.5 rounded-lg text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors disabled:opacity-40"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isDhtLoading ? 'animate-spin' : ''}`} />
-                    </button>
-                  )}
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                   <select
                     aria-label="Pilih rentang waktu grafik suhu"
                     value={dhtTimeDuration}
@@ -3527,6 +3493,39 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              {/* Rata-rata Suhu & Kelembaban */}
+              {rataRataEnv && (
+                <div className="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-xl p-2.5 text-center">
+                    <p className="text-[10px] text-orange-500 dark:text-orange-400 font-medium uppercase tracking-wide">Avg Suhu A</p>
+                    <p className="text-xl font-bold text-orange-700 dark:text-orange-300 mt-0.5">
+                      {rataRataEnv.A.temp ?? '–'}<span className="text-sm font-normal">°C</span>
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">{rataRataEnv.A.count} data</p>
+                  </div>
+                  <div className="bg-pink-50 dark:bg-pink-900/20 rounded-xl p-2.5 text-center">
+                    <p className="text-[10px] text-pink-500 dark:text-pink-400 font-medium uppercase tracking-wide">Avg Suhu B</p>
+                    <p className="text-xl font-bold text-pink-700 dark:text-pink-300 mt-0.5">
+                      {rataRataEnv.B.temp ?? '–'}<span className="text-sm font-normal">°C</span>
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">{rataRataEnv.B.count} data</p>
+                  </div>
+                  <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-xl p-2.5 text-center">
+                    <p className="text-[10px] text-cyan-500 dark:text-cyan-400 font-medium uppercase tracking-wide">Avg Hum A</p>
+                    <p className="text-xl font-bold text-cyan-700 dark:text-cyan-300 mt-0.5">
+                      {rataRataEnv.A.hum ?? '–'}<span className="text-sm font-normal">%</span>
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">{rataRataEnv.A.count} data</p>
+                  </div>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-2.5 text-center">
+                    <p className="text-[10px] text-blue-500 dark:text-blue-400 font-medium uppercase tracking-wide">Avg Hum B</p>
+                    <p className="text-xl font-bold text-blue-700 dark:text-blue-300 mt-0.5">
+                      {rataRataEnv.B.hum ?? '–'}<span className="text-sm font-normal">%</span>
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">{rataRataEnv.B.count} data</p>
+                  </div>
+                </div>
+              )}
               {dhtHistoryAll.length === 0 && dhtHistory.length === 0 ? (
                 <div className="relative z-10 flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
                   <Droplets className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
@@ -3536,7 +3535,7 @@ export default function App() {
                   <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
                     {isDemoMode
                       ? "Data akan muncul setelah NodeMCU terhubung."
-                      : "Klik ↻ untuk muat ulang, atau pastikan NodeMCU sudah pernah mengirim data."}
+                      : "Pastikan NodeMCU sudah pernah mengirim data dan kode.gs sudah di-redeploy."}
                   </p>
                 </div>
               ) : (

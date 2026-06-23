@@ -403,11 +403,29 @@ function doPost(e) {
           }
         }
 
-        var ObjectLingkungan = [];
+        // ── AUTO-CLEANUP: Perbaiki header & hapus baris tanpa Timestamp_ms ──────
         var sLing_f = sheet.getSheetByName("Lingkungan" + modeSuffix);
+        if (sLing_f && sLing_f.getLastRow() > 0) {
+          if (!sLing_f.getRange(1, 5).getValue()) {
+            sLing_f.getRange(1, 5).setValue("Timestamp_ms");
+          }
+          var lRowLing = sLing_f.getLastRow();
+          if (lRowLing > 1) {
+            var allLingRaw = sLing_f.getRange(2, 1, lRowLing - 1, 5).getValues();
+            var validLingRaw = allLingRaw.filter(function(r) { return !!r[4]; });
+            if (validLingRaw.length < allLingRaw.length) {
+              sLing_f.getRange(2, 1, lRowLing - 1, 5).clearContent();
+              if (validLingRaw.length > 0) {
+                sLing_f.getRange(2, 1, validLingRaw.length, 5).setValues(validLingRaw);
+              }
+            }
+          }
+        }
+
+        var ObjectLingkungan = [];
         if (sLing_f && sLing_f.getLastRow() > 1) {
-          var rawLing_f = sLing_f.getDataRange().getValues();
-          for (var i = 1; i < rawLing_f.length; i++) {
+          var rawLing_f = sLing_f.getRange(2, 1, sLing_f.getLastRow() - 1, 5).getValues();
+          for (var i = 0; i < rawLing_f.length; i++) {
             var ts_f = rawLing_f[i][4];
             if (ts_f) {
               ObjectLingkungan.push({
@@ -420,6 +438,33 @@ function doPost(e) {
           }
         }
 
+        // ── Hitung rata-rata per node ─────────────────────────────────────────
+        var aT = [], aH = [], bT = [], bH = [];
+        for (var ri = 0; ri < ObjectLingkungan.length; ri++) {
+          var rl = ObjectLingkungan[ri];
+          if (rl.node === 'A') { aT.push(rl.temp); aH.push(rl.humidity); }
+          else if (rl.node === 'B') { bT.push(rl.temp); bH.push(rl.humidity); }
+        }
+        function avgArr(arr) {
+          if (!arr.length) return null;
+          return Math.round(arr.reduce(function(a,b){return a+b;},0) / arr.length * 10) / 10;
+        }
+        var rataRata = {
+          A: { temp: avgArr(aT), hum: avgArr(aH), count: aT.length },
+          B: { temp: avgArr(bT), hum: avgArr(bH), count: bT.length }
+        };
+
+        // ── Simpan rata-rata ke sheet RataRata (baris 2 selalu diperbarui) ────
+        var sRata = sheet.getSheetByName("RataRata" + modeSuffix);
+        if (!sRata) sRata = sheet.insertSheet("RataRata" + modeSuffix);
+        if (sRata.getLastRow() === 0) {
+          sRata.appendRow(["Waktu Update","Avg Suhu A (°C)","Avg Hum A (%)","Avg Suhu B (°C)","Avg Hum B (%)","Total Data"]);
+          sRata.getRange(1, 1, 1, 6).setFontWeight("bold");
+        }
+        var rataRow = [new Date().toLocaleString("id-ID"), rataRata.A.temp, rataRata.A.hum, rataRata.B.temp, rataRata.B.hum, ObjectLingkungan.length];
+        if (sRata.getLastRow() <= 1) { sRata.appendRow(rataRow); }
+        else { sRata.getRange(2, 1, 1, 6).setValues([rataRow]); }
+
         return ContentService.createTextOutput(
           JSON.stringify({
             status: "success",
@@ -431,6 +476,7 @@ function doPost(e) {
               chartData: ObjectChartData,
               effectChartData: ObjectSummary,
               lingkunganHistory: ObjectLingkungan,
+              rataRata: rataRata,
             },
           }),
         ).setMimeType(ContentService.MimeType.JSON);
