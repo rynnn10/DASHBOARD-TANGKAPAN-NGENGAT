@@ -4486,45 +4486,89 @@ export default function App() {
                   </div>
                   <div className="p-4 space-y-3">
                     {/* Penjelasan pin + dan - */}
+                    {/* Penjelasan 2 sisi modul */}
                     <div className="flex items-start gap-1.5 text-[11px] text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <div>
-                        Pin <strong className="text-red-500">+</strong> dan{" "}
-                        <strong className="text-gray-500">−</strong> di modul
-                        ini <em>bukan</em> VCC/GND untuk daya modul — modul
-                        adalah rangkaian pasif (hanya resistor), tidak butuh
-                        daya sendiri. Pin + dan − adalah <strong>terminal
-                        input tegangan yang ingin diukur</strong> (yaitu
-                        baterai LiFePO4 kamu).
+                      <div className="space-y-1">
+                        <p>Modul punya <strong>dua sisi berbeda</strong>:</p>
+                        <p>
+                          🔵 <strong>Kiri — Screw terminal biru</strong> (VCC &amp; GND):
+                          untuk koneksi ke <strong>baterai</strong>.
+                        </p>
+                        <p>
+                          🔌 <strong>Kanan — 3 pin header</strong> (S, +, −):
+                          untuk koneksi ke <strong>NodeMCU</strong>. Pin{" "}
+                          <strong>+</strong> di header adalah duplikat VCC
+                          screw (tidak dipakai di sini).
+                        </p>
                       </div>
                     </div>
 
+                    {/* Tabel koneksi baterai */}
+                    <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                      Sisi kiri — Screw terminal (ke Baterai):
+                    </p>
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                          <th className="text-left pb-2 font-semibold">Pin Modul</th>
+                          <th className="text-left pb-2 font-semibold">Screw Terminal</th>
+                          <th className="text-left pb-2 font-semibold">Disambung ke</th>
+                          <th className="text-left pb-2 font-semibold">Kabel</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-700 dark:text-gray-300">
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold text-red-500">VCC</td>
+                          <td className="py-1.5 font-mono font-bold text-red-600">Terminal + Baterai</td>
+                          <td className="py-1.5 text-red-500">Kabel merah baterai</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold text-gray-500">GND</td>
+                          <td className="py-1.5 font-mono text-gray-600">Terminal − Baterai</td>
+                          <td className="py-1.5 text-gray-500">Kabel hitam baterai</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    {/* Tabel koneksi NodeMCU */}
+                    <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                      Sisi kanan — 3 pin header (ke NodeMCU):
+                    </p>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                          <th className="text-left pb-2 font-semibold">Pin Header</th>
                           <th className="text-left pb-2 font-semibold">Disambung ke</th>
                           <th className="text-left pb-2 font-semibold">Keterangan</th>
                         </tr>
                       </thead>
                       <tbody className="text-gray-700 dark:text-gray-300">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
-                          <td className="py-1.5 font-mono font-bold text-red-500">+</td>
-                          <td className="py-1.5 font-mono font-bold text-red-600">Terminal + Baterai</td>
-                          <td className="py-1.5">Kabel merah baterai LiFePO4</td>
-                        </tr>
-                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
-                          <td className="py-1.5 font-mono font-bold text-gray-500">−</td>
-                          <td className="py-1.5 font-mono font-bold text-gray-500">Terminal − Baterai = GND NodeMCU</td>
-                          <td className="py-1.5">Kabel hitam baterai, sambung juga ke GND NodeMCU</td>
-                        </tr>
-                        <tr>
                           <td className="py-1.5 font-mono font-bold text-blue-500">S</td>
                           <td className="py-1.5 font-mono text-blue-500 font-bold">A0 (NodeMCU)</td>
-                          <td className="py-1.5">Output sinyal ke ADC</td>
+                          <td className="py-1.5">Output sinyal ADC</td>
+                        </tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold text-gray-400">+</td>
+                          <td className="py-1.5 font-mono text-gray-400">— (tidak pakai)</td>
+                          <td className="py-1.5 text-gray-400">Duplikat VCC screw</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold text-gray-600">−</td>
+                          <td className="py-1.5 font-mono text-gray-600 font-bold">GND (NodeMCU)</td>
+                          <td className="py-1.5">Common ground wajib!</td>
                         </tr>
                       </tbody>
                     </table>
+
+                    {/* Diagram wiring */}
+                    <code className="block bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 font-mono text-[10px] leading-loose whitespace-pre text-gray-700 dark:text-gray-300">
+{"Baterai (+) ── VCC screw ─┐            "}
+{"                           │ MODUL      "}
+{"Baterai (−) ── GND screw  │  S  ──── A0 NodeMCU"}
+{"      │                   │  +  ──── (tidak pakai)"}
+{"      └───────────────────┘  −  ──── GND NodeMCU"}
+                    </code>
 
                     {/* Cara kerja modul */}
                     <div className="flex items-start gap-1.5 text-[11px] text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/10 rounded-lg p-2">
