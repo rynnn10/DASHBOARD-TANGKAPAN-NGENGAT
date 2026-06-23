@@ -4573,15 +4573,21 @@ export default function App() {
 
                     {/* Diagram wiring dasar */}
                     <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-300">
-                      Diagram wiring lengkap (termasuk sumber daya NodeMCU dari baterai):
+                      Diagram wiring lengkap:
                     </p>
-                    <code className="block bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 font-mono text-[10px] leading-relaxed whitespace-pre text-gray-700 dark:text-gray-300">
-{"                    ┌─── VCC screw ─── Baterai (+) ───┬── Buck IN+"}
-{"   MODUL SENSOR  ──┤                                  │            "}
-{"                   ├─── GND screw ─── Baterai (−) ───┼── Buck IN− "}
-{"                   │    [=pin − header, 1 PCB trace]  │            "}
-{"                   └─── S ────── A0 NodeMCU     GND NodeMCU ◄─ Buck OUT−"}
-{"                         −  ──── GND NodeMCU           VIN NodeMCU ◄─ Buck OUT+ (5V)"}
+                    <code className="block bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 font-mono text-[10px] leading-relaxed whitespace-pre overflow-x-auto text-gray-700 dark:text-gray-300">
+{"── Sensor Modul ──────────────────\n"}
+{"Baterai (+) ── VCC screw\n"}
+{"Baterai (−) ── GND screw\n"}
+{"               (= pin −, 1 jalur PCB)\n"}
+{"   pin S ────────────► A0 NodeMCU\n"}
+{"   pin − ────────────► GND NodeMCU\n"}
+{"\n"}
+{"── Daya NodeMCU (Buck Converter) ─\n"}
+{"Baterai (+) ── Buck IN+\n"}
+{"Baterai (−) ── Buck IN−\n"}
+{"   OUT+ (5V) ──────► VIN NodeMCU\n"}
+{"   OUT− ───────────► GND NodeMCU\n"}
                     </code>
 
                     {/* Info buck converter */}
