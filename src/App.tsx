@@ -37,7 +37,7 @@ import {
   Cable,
   Info,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import type { MqttClient } from "mqtt";
 import {
   LineChart,
   Line,
@@ -53,7 +53,6 @@ import {
 import { clsx } from "clsx";
 import type { ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import mqtt from "mqtt";
 import { useRegisterSW } from "virtual:pwa-register/react";
 const safeParseDate = (dateStr: any) => {
   if (!dateStr) return new Date();
@@ -1011,9 +1010,7 @@ export default function App() {
     return (localStorage.getItem("espTargetNode") as "A" | "B") || "A";
   });
   const espTargetNodeRef = React.useRef(espTargetNode);
-  const mqttClientRef = React.useRef<ReturnType<typeof mqtt.connect> | null>(
-    null,
-  );
+  const mqttClientRef = React.useRef<MqttClient | null>(null);
   const [relayMode, setRelayMode] = useState<{
     A: "auto" | "manual";
     B: "auto" | "manual";
@@ -1047,9 +1044,12 @@ export default function App() {
   // 2. Listener Real-Time MQTT dari NodeMCU ESP8266
   useEffect(() => {
     if (isDemoMode) return;
+    let cancelled = false;
 
-    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
-    mqttClientRef.current = client;
+    import("mqtt").then(({ default: mqttLib }) => {
+      if (cancelled) return;
+      const client = mqttLib.connect("wss://broker.hivemq.com:8884/mqtt");
+      mqttClientRef.current = client;
 
     client.on("connect", () => {
       console.log("✅ Terhubung ke MQTT Broker HiveMQ");
@@ -1210,15 +1210,19 @@ export default function App() {
       }
     });
 
-    client.on("offline", () => {
-      console.log("❌ Terputus dari MQTT Broker (WebSocket)");
-      setNodeA((prev) => ({ ...prev, online: false }));
-      setNodeB((prev) => ({ ...prev, online: false }));
+      client.on("offline", () => {
+        console.log("❌ Terputus dari MQTT Broker (WebSocket)");
+        setNodeA((prev) => ({ ...prev, online: false }));
+        setNodeB((prev) => ({ ...prev, online: false }));
+      });
     });
 
     return () => {
-      mqttClientRef.current = null;
-      client.end();
+      cancelled = true;
+      if (mqttClientRef.current) {
+        mqttClientRef.current.end();
+        mqttClientRef.current = null;
+      }
     };
   }, [isDemoMode]);
 
@@ -2325,24 +2329,17 @@ export default function App() {
   return (
     <div className="relative flex h-screen overflow-hidden text-gray-800 bg-gray-50 dark:bg-gray-950 dark:text-gray-200 transition-colors duration-500 font-sans">
       {/* Banner update Service Worker — muncul ketika versi baru tersedia di cache */}
-      <AnimatePresence>
-        {needRefresh && (
-          <motion.div
-            initial={{ y: -60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -60, opacity: 0 }}
-            className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-between gap-3 bg-emerald-600 text-white text-sm px-4 py-2.5 shadow-lg"
+      {needRefresh && (
+        <div className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-between gap-3 bg-emerald-600 text-white text-sm px-4 py-2.5 shadow-lg anim-slide-down">
+          <span className="font-medium">Versi baru tersedia!</span>
+          <button
+            onClick={() => updateServiceWorker(true)}
+            className="flex-shrink-0 bg-white text-emerald-700 font-semibold text-xs px-3 py-1 rounded-full hover:bg-emerald-50 transition-colors"
           >
-            <span className="font-medium">Versi baru tersedia!</span>
-            <button
-              onClick={() => updateServiceWorker(true)}
-              className="flex-shrink-0 bg-white text-emerald-700 font-semibold text-xs px-3 py-1 rounded-full hover:bg-emerald-50 transition-colors"
-            >
-              Perbarui sekarang
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            Perbarui sekarang
+          </button>
+        </div>
+      )}
       {/* Decorative Blur Backgrounds */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] dark:opacity-[0.02]">
@@ -3103,8 +3100,8 @@ export default function App() {
                         </>
                       )}
                     </select>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 flex-1">
+                    <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["total", "rata-rata"] as const).map((m) => (
                           <button
                             key={m}
@@ -3120,7 +3117,7 @@ export default function App() {
                           </button>
                         ))}
                       </div>
-                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 flex-1">
+                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["hari", "minggu", "bulan", "tahun"] as const).map(
                           (t) => (
                             <button
@@ -5298,25 +5295,17 @@ export default function App() {
         )}
 
         {/* Login Modal */}
-        <AnimatePresence>
-          {isLoginModalOpen && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"
+        {isLoginModalOpen && (
+            <div
+              className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center anim-fade-in"
               onClick={(e) => {
                 if (!loginSuccess && e.target === e.currentTarget) {
                   setLoginModalOpen(false);
                 }
               }}
             >
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden"
+              <div
+                className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden anim-scale-in"
               >
                 <div className="p-6 sm:p-8">
                   <div className="flex justify-between items-center mb-8">
@@ -5333,11 +5322,7 @@ export default function App() {
                     </button>
                   </div>
                   {loginSuccess ? (
-                    <motion.div
-                      initial={{ scale: 0.8, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      className="py-12 flex flex-col items-center justify-center"
-                    >
+                    <div className="py-12 flex flex-col items-center justify-center anim-scale-in">
                       <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
                         <CheckCircle2 className="w-10 h-10" />
                       </div>
@@ -5347,7 +5332,7 @@ export default function App() {
                       <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
                         Redirecting...
                       </p>
-                    </motion.div>
+                    </div>
                   ) : (
                     <>
                       {loginError && (
@@ -5505,10 +5490,9 @@ export default function App() {
                     </>
                   )}
                 </div>
-              </motion.div>
-            </motion.div>
+              </div>
+            </div>
           )}
-        </AnimatePresence>
 
         {/* Profile Modal */}
         {isProfileOpen && (
@@ -5702,15 +5686,10 @@ export default function App() {
         )}
 
         {/* Buffer Flush Toast — muncul saat data offline berhasil masuk */}
-        <AnimatePresence>
           {bufferToast && (
-            <motion.div
+            <div
               key={bufferToast.id}
-              initial={{ opacity: 0, y: 40, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              transition={{ duration: 0.3 }}
-              className="fixed bottom-6 right-4 z-[200] flex items-start gap-3 bg-emerald-700 dark:bg-emerald-800 text-white rounded-2xl shadow-2xl px-5 py-4 max-w-xs border border-emerald-500/40"
+              className="fixed bottom-6 right-4 z-[200] flex items-start gap-3 bg-emerald-700 dark:bg-emerald-800 text-white rounded-2xl shadow-2xl px-5 py-4 max-w-xs border border-emerald-500/40 anim-slide-up"
             >
               <div className="mt-0.5 shrink-0 w-8 h-8 rounded-full bg-emerald-500/30 flex items-center justify-center">
                 <Database className="w-4 h-4 text-emerald-200" />
@@ -5730,9 +5709,8 @@ export default function App() {
               >
                 <X className="w-4 h-4" />
               </button>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
 
         {/* Logout Confirm Dialog */}
         {isLogoutConfirmOpen && (

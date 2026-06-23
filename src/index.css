@@ -1,3 +1,25 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
+
+@keyframes _slide-down {
+  from { opacity: 0; transform: translateY(-60px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes _fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes _scale-in {
+  from { opacity: 0; transform: scale(0.9) translateY(20px); }
+  to   { opacity: 1; transform: scale(1)   translateY(0); }
+}
+@keyframes _slide-up {
+  from { opacity: 0; transform: translateY(40px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+.anim-slide-down { animation: _slide-down 0.3s ease-out; }
+.anim-fade-in    { animation: _fade-in    0.2s ease-out; }
+.anim-scale-in   { animation: _scale-in   0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.anim-slide-up   { animation: _slide-up   0.3s ease-out; }
