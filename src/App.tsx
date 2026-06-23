@@ -692,6 +692,31 @@ export default function App() {
   const [isProfileOpen, setProfileOpen] = useState(false);
   const [isSheetSettingsOpen, setSheetSettingsOpen] = useState(false);
   const [isWiringGuideOpen, setIsWiringGuideOpen] = useState(false);
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+
+  // ---- Tipe & State Jadwal Alarm DS3231 ----
+  type ScheduleItem = {
+    id: number;
+    label: string;
+    enabled: boolean;
+    days: number; // bitmask bit0=Min(Sun)...bit6=Sab(Sat)
+    onHour: number; onMin: number;
+    offHour: number; offMin: number;
+  };
+  const [schedules, setSchedules] = useState<ScheduleItem[]>(() => {
+    try {
+      const s = localStorage.getItem("ngengat_schedules");
+      return s ? JSON.parse(s) : [{
+        id: 0, label: "Default", enabled: true, days: 127,
+        onHour: 18, onMin: 0, offHour: 6, offMin: 0
+      }];
+    } catch { return []; }
+  });
+  const [editingSched, setEditingSched] = useState<ScheduleItem | null>(null);
+  const [schedLabel, setSchedLabel] = useState("");
+  const [schedDays, setSchedDays] = useState(127);
+  const [schedOnTime, setSchedOnTime] = useState("18:00");
+  const [schedOffTime, setSchedOffTime] = useState("06:00");
   const [sheetUrl, setSheetUrl] = useState(
     () => localStorage.getItem("googleSheetUrl") || "",
   );
@@ -1031,6 +1056,7 @@ export default function App() {
       client.subscribe("dashboard/ngengat/baterai");
       client.subscribe("dashboard/ngengat/lingkungan");
       client.subscribe("dashboard/ngengat/settings"); // retained — sinkron pengaturan antar device
+      client.subscribe("dashboard/ngengat/schedule"); // retained — jadwal alarm DS3231
     });
 
     client.on("message", (topic, message) => {
@@ -1158,6 +1184,12 @@ export default function App() {
             ...prev,
             { timestamp: now, node: nodeKey, temp, humidity },
           ]);
+        }
+        if (topic === "dashboard/ngengat/schedule") {
+          if (Array.isArray(payload.schedules)) {
+            setSchedules(payload.schedules);
+            try { localStorage.setItem("ngengat_schedules", JSON.stringify(payload.schedules)); } catch {}
+          }
         }
         if (topic === "dashboard/ngengat/settings") {
           if (typeof payload.bufferBattery === "boolean") {
@@ -3980,6 +4012,16 @@ export default function App() {
                     <Cable className="w-4 h-4" />
                     Panduan Wiring Modul ke NodeMCU ESP8266
                   </button>
+                  <button
+                    onClick={() => { setIsScheduleOpen(true); setSettingsOpen(false); }}
+                    className="w-full mt-2 py-2.5 bg-violet-50 hover:bg-violet-100 dark:bg-violet-900/20 dark:hover:bg-violet-900/40 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-800 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Clock className="w-4 h-4" />
+                    Jadwal Alarm DS3231
+                    <span className="ml-auto bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 text-xs px-2 py-0.5 rounded-full font-mono">
+                      {schedules.filter(s => s.enabled).length}/{schedules.length}
+                    </span>
+                  </button>
                 </div>
                 <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
@@ -4204,16 +4246,33 @@ export default function App() {
                           </td>
                           <td className="py-1.5">I2C data (custom)</td>
                         </tr>
-                        <tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">SCL</td>
                           <td className="py-1.5 font-mono text-blue-500 font-bold">
                             D6 (GPIO12)
                           </td>
                           <td className="py-1.5">I2C clock (custom)</td>
                         </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold text-violet-600">SQW</td>
+                          <td className="py-1.5 font-mono text-violet-600 font-bold">
+                            RST
+                          </td>
+                          <td className="py-1.5">Alarm wake-up</td>
+                        </tr>
                       </tbody>
                     </table>
-                    <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/10 rounded-lg p-2">
+                    <div className="mt-2 flex items-start gap-1.5 text-[11px] text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/10 rounded-lg p-2">
+                      <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>SQW → RST</strong>: tambahkan resistor{" "}
+                        <strong>10kΩ</strong> dari 3.3V ke jalur SQW–RST
+                        sebagai pull-up. Saat alarm DS3231 aktif, SQW
+                        menjadi LOW → RST tertarik LOW → NodeMCU boot dari
+                        deep sleep.
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-start gap-1.5 text-[11px] text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>
                         I2C menggunakan pin <strong>custom</strong> (D5 sebagai
@@ -4389,6 +4448,11 @@ export default function App() {
                           func: "Baterai (ADC)",
                           color: "text-green-600 dark:text-green-400",
                         },
+                        {
+                          pin: "SQW",
+                          func: "→ RST (alarm wake)",
+                          color: "text-violet-600 dark:text-violet-400",
+                        },
                       ].map((item) => (
                         <div
                           key={item.pin}
@@ -4417,6 +4481,246 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* ============ MODAL JADWAL ALARM DS3231 ============ */}
+        {isScheduleOpen && (() => {
+          const DAY_LABELS = ["Min","Sen","Sel","Rab","Kam","Jum","Sab"];
+          const pad = (n: number) => String(n).padStart(2, "0");
+
+          const startEdit = (s: ReturnType<typeof schedules[0] extends infer T ? () => T : never> extends never ? typeof schedules[0] : typeof schedules[0]) => {
+            setEditingSched(s);
+            setSchedLabel(s.label);
+            setSchedDays(s.days);
+            setSchedOnTime(`${pad(s.onHour)}:${pad(s.onMin)}`);
+            setSchedOffTime(`${pad(s.offHour)}:${pad(s.offMin)}`);
+          };
+
+          const addNew = () => {
+            const newS = {
+              id: Date.now(), label: "Jadwal Baru", enabled: true, days: 127,
+              onHour: 18, onMin: 0, offHour: 6, offMin: 0
+            };
+            setSchedules(prev => [...prev, newS]);
+            startEdit(newS);
+          };
+
+          const saveEdit = () => {
+            if (!editingSched) return;
+            const [oh, om] = schedOnTime.split(":").map(Number);
+            const [fh, fm] = schedOffTime.split(":").map(Number);
+            setSchedules(prev => prev.map(s => s.id === editingSched.id
+              ? { ...s, label: schedLabel, days: schedDays,
+                  onHour: oh, onMin: om, offHour: fh, offMin: fm }
+              : s
+            ));
+            setEditingSched(null);
+          };
+
+          const deleteS = (id: number) => setSchedules(prev => prev.filter(s => s.id !== id));
+          const toggleS = (id: number) => setSchedules(prev => prev.map(s => s.id === id ? {...s, enabled: !s.enabled} : s));
+
+          const publishSchedules = (list: typeof schedules) => {
+            if (!mqttClientRef.current) return;
+            const payload = JSON.stringify({ schedules: list });
+            mqttClientRef.current.publish("dashboard/ngengat/schedule", payload, { retain: true, qos: 1 });
+            try { localStorage.setItem("ngengat_schedules", payload); } catch {}
+          };
+
+          return (
+            <div
+              className="fixed inset-0 bg-gray-900/50 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+              onClick={e => e.target === e.currentTarget && !editingSched && setIsScheduleOpen(false)}
+            >
+              <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
+
+                {/* Header */}
+                <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 shrink-0 rounded-t-2xl">
+                  <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-violet-500" />
+                    {editingSched ? (editingSched.id === -1 ? "Tambah Jadwal" : "Edit Jadwal") : "Jadwal Alarm DS3231"}
+                  </h3>
+                  <button onClick={() => { setEditingSched(null); setIsScheduleOpen(false); }}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="overflow-y-auto flex-1 p-4 space-y-3">
+
+                  {editingSched ? (
+                    /* ---- FORM EDIT ---- */
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 block">Nama Jadwal</label>
+                        <input
+                          value={schedLabel}
+                          onChange={e => setSchedLabel(e.target.value)}
+                          maxLength={21}
+                          className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2 block">Hari Aktif</label>
+                        <div className="flex flex-wrap gap-2">
+                          {DAY_LABELS.map((d, i) => {
+                            const active = (schedDays >> i) & 1;
+                            return (
+                              <button key={i}
+                                onClick={() => setSchedDays(prev => active ? prev & ~(1<<i) : prev | (1<<i))}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors",
+                                  active
+                                    ? "bg-violet-500 text-white"
+                                    : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                )}
+                              >{d}</button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <button onClick={() => setSchedDays(62)}
+                            className="text-[11px] text-violet-600 dark:text-violet-400 underline">Sen–Jum</button>
+                          <button onClick={() => setSchedDays(65)}
+                            className="text-[11px] text-violet-600 dark:text-violet-400 underline">Min+Sab</button>
+                          <button onClick={() => setSchedDays(127)}
+                            className="text-[11px] text-violet-600 dark:text-violet-400 underline">Setiap hari</button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1 block">Waktu ON (mulai)</label>
+                          <input type="time" value={schedOnTime}
+                            onChange={e => setSchedOnTime(e.target.value)}
+                            className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-red-500 dark:text-red-400 mb-1 block">Waktu OFF (selesai)</label>
+                          <input type="time" value={schedOffTime}
+                            onChange={e => setSchedOffTime(e.target.value)}
+                            className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 border border-red-200 dark:border-red-800 rounded-lg text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-400"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={() => setEditingSched(null)}
+                          className="flex-1 py-2 text-sm font-semibold text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                          Batal
+                        </button>
+                        <button onClick={saveEdit}
+                          className="flex-1 py-2 text-sm font-semibold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors">
+                          Simpan
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ---- DAFTAR JADWAL ---- */
+                    <>
+                      <div className="flex items-start gap-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg p-3 text-xs text-violet-700 dark:text-violet-300">
+                        <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>Jadwal dikirim ke sensor via MQTT. Sensor akan <strong>deep sleep</strong> di luar jadwal dan dibangunkan oleh pin SQW DS3231 → RST.</span>
+                      </div>
+
+                      {schedules.length === 0 && (
+                        <p className="text-center text-sm text-gray-400 py-4">Belum ada jadwal. Tambahkan jadwal di bawah.</p>
+                      )}
+
+                      {schedules.map(s => (
+                        <div key={s.id}
+                          className={cn(
+                            "border rounded-xl p-3 transition-colors",
+                            s.enabled
+                              ? "border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10"
+                              : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/20 opacity-60"
+                          )}>
+                          <div className="flex items-center justify-between mb-2">
+                            <button onClick={() => toggleS(s.id)}
+                              className={cn(
+                                "w-9 h-5 rounded-full relative transition-colors",
+                                s.enabled ? "bg-violet-500" : "bg-gray-300 dark:bg-gray-600"
+                              )}>
+                              <span className={cn(
+                                "absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all",
+                                s.enabled ? "left-4" : "left-0.5"
+                              )} />
+                            </button>
+                            <span className="flex-1 ml-2 text-sm font-semibold text-gray-800 dark:text-white">{s.label}</span>
+                            <div className="flex gap-1">
+                              <button onClick={() => startEdit(s)}
+                                className="p-1.5 text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors">
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => deleteS(s.id)}
+                                className="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {DAY_LABELS.map((d, i) => (
+                              <span key={i}
+                                className={cn(
+                                  "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                                  (s.days >> i) & 1
+                                    ? "bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300"
+                                    : "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500"
+                                )}>{d}</span>
+                            ))}
+                          </div>
+                          <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                            <span className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">
+                              ▶ {pad(s.onHour)}:{pad(s.onMin)}
+                            </span>
+                            <span className="text-gray-400">→</span>
+                            <span className="text-red-500 dark:text-red-400 font-mono font-bold">
+                              ■ {pad(s.offHour)}:{pad(s.offMin)}
+                            </span>
+                            {s.onHour > s.offHour && (
+                              <span className="text-gray-400 text-[10px]">(lintas tengah malam)</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                      {schedules.length < 6 && (
+                        <button onClick={addNew}
+                          className="w-full py-2.5 border-2 border-dashed border-violet-200 dark:border-violet-800 text-violet-500 dark:text-violet-400 rounded-xl text-sm font-semibold hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors flex items-center justify-center gap-2">
+                          <span className="text-lg leading-none">+</span> Tambah Jadwal
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Footer */}
+                {!editingSched && (
+                  <div className="px-5 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 shrink-0 rounded-b-2xl space-y-2">
+                    <button
+                      onClick={() => { publishSchedules(schedules); setIsScheduleOpen(false); }}
+                      disabled={isDemoMode}
+                      className={cn(
+                        "w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors",
+                        isDemoMode
+                          ? "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
+                          : "bg-violet-500 hover:bg-violet-600 text-white"
+                      )}
+                    >
+                      <SatelliteDish className="w-4 h-4" />
+                      Simpan &amp; Kirim ke Sensor
+                    </button>
+                    {isDemoMode && (
+                      <p className="text-center text-xs text-gray-400">Mode Demo — pengiriman MQTT tidak aktif</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Log Reset Modal */}
         {isLogResetModalOpen && (
