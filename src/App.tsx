@@ -4561,14 +4561,49 @@ export default function App() {
                       </tbody>
                     </table>
 
-                    {/* Diagram wiring */}
-                    <code className="block bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 font-mono text-[10px] leading-loose whitespace-pre text-gray-700 dark:text-gray-300">
-{"Baterai (+) ── VCC screw ─┐            "}
-{"                           │ MODUL      "}
-{"Baterai (−) ── GND screw  │  S  ──── A0 NodeMCU"}
-{"      │                   │  +  ──── (tidak pakai)"}
-{"      └───────────────────┘  −  ──── GND NodeMCU"}
+                    {/* Catatan GND internal */}
+                    <div className="flex items-start gap-1.5 text-[11px] text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/10 rounded-lg p-2">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>GND screw dan pin − header sudah terhubung di dalam PCB modul</strong>
+                        {" "}(satu jalur tembaga). Tidak perlu menyolder kabel ekstra antara keduanya.
+                        Cukup: GND screw → Baterai (−), pin − header → GND NodeMCU — otomatis common ground.
+                      </div>
+                    </div>
+
+                    {/* Diagram wiring dasar */}
+                    <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                      Diagram wiring lengkap (termasuk sumber daya NodeMCU dari baterai):
+                    </p>
+                    <code className="block bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 font-mono text-[10px] leading-relaxed whitespace-pre text-gray-700 dark:text-gray-300">
+{"                    ┌─── VCC screw ─── Baterai (+) ───┬── Buck IN+"}
+{"   MODUL SENSOR  ──┤                                  │            "}
+{"                   ├─── GND screw ─── Baterai (−) ───┼── Buck IN− "}
+{"                   │    [=pin − header, 1 PCB trace]  │            "}
+{"                   └─── S ────── A0 NodeMCU     GND NodeMCU ◄─ Buck OUT−"}
+{"                         −  ──── GND NodeMCU           VIN NodeMCU ◄─ Buck OUT+ (5V)"}
                     </code>
+
+                    {/* Info buck converter */}
+                    <div className="flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 rounded-lg p-2">
+                      <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-semibold">Memberi daya NodeMCU dari baterai 12V:</p>
+                        <p>
+                          NodeMCU butuh <strong>5V</strong> di pin VIN, sedangkan baterai LiFePO4 4S
+                          outputnya 12–14.4V. Gunakan <strong>buck converter (step-down module)</strong>
+                          {" "}seperti <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">LM2596</code>,{" "}
+                          <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">XL4016</code>, atau{" "}
+                          <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">MP1584</code>.
+                        </p>
+                        <ol className="list-decimal list-inside space-y-1 leading-relaxed">
+                          <li>Sambung Baterai (+) → Buck <strong>IN+</strong>, Baterai (−) → Buck <strong>IN−</strong></li>
+                          <li>Putar trimpot buck converter hingga <strong>OUT+ = 5V</strong> (ukur dengan multimeter sebelum sambung NodeMCU)</li>
+                          <li>Buck <strong>OUT+</strong> → NodeMCU <strong>VIN</strong></li>
+                          <li>Buck <strong>OUT−</strong> → NodeMCU <strong>GND</strong> (common ground dengan semua komponen)</li>
+                        </ol>
+                      </div>
+                    </div>
 
                     {/* Cara kerja modul */}
                     <div className="flex items-start gap-1.5 text-[11px] text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/10 rounded-lg p-2">
