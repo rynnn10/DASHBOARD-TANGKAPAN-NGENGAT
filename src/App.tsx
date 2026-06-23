@@ -2567,48 +2567,50 @@ export default function App() {
                     </h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    {isDemoMode && (
+                    {isDemoMode ? (
+                      <div className="flex items-center rounded-lg border border-purple-200 dark:border-purple-800 overflow-hidden shadow-sm">
+                        <button
+                          onClick={() =>
+                            setNodeA((prev) => ({
+                              ...prev,
+                              uv365: Math.max(0, prev.uv365 - 1),
+                            }))
+                          }
+                          className="px-2.5 py-2 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors text-base font-bold leading-none border-r border-purple-200 dark:border-purple-800"
+                          title="Kurangi tangkapan (-1)"
+                          aria-label="Kurangi tangkapan Node A"
+                        >
+                          −
+                        </button>
+                        <button
+                          onClick={() =>
+                            setNodeA((prev) => ({
+                              ...prev,
+                              uv365: prev.uv365 + 1,
+                            }))
+                          }
+                          className="px-2.5 py-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors text-base font-bold leading-none"
+                          title="Tambah tangkapan (+1)"
+                          aria-label="Tambah tangkapan Node A"
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : (
                       <button
-                        onClick={() =>
-                          setNodeA((prev) => ({
-                            ...prev,
-                            uv365: Math.max(0, prev.uv365 - 1),
-                          }))
-                        }
-                        className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
-                        title="Kurangi tangkapan (-1)"
-                      >
-                        <Bug className="w-6 h-6" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        if (isDemoMode) {
-                          setNodeA((prev) => ({
-                            ...prev,
-                            uv365: prev.uv365 + 1,
-                          }));
-                        } else {
+                        onClick={() => {
                           setResetOriginNode("A");
                           setResetTarget("A");
                           setResetScope("dashboard");
                           setIsResetModalOpen(true);
-                        }
-                      }}
-                      className={cn(
-                        "w-12 h-12 rounded-full flex items-center justify-center text-purple-600 dark:text-purple-400 transition-transform shadow-sm cursor-pointer hover:scale-110 active:scale-95",
-                        isDemoMode
-                          ? "bg-purple-200 dark:bg-purple-900/60"
-                          : "bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/60",
-                      )}
-                      title={
-                        isDemoMode
-                          ? "Tambah tangkapan (+1)"
-                          : "Reset tangkapan Node A"
-                      }
-                    >
-                      <Bug className="w-6 h-6" />
-                    </button>
+                        }}
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/60 transition-transform shadow-sm cursor-pointer hover:scale-110 active:scale-95"
+                        title="Reset tangkapan Node A"
+                        aria-label="Reset tangkapan Node A"
+                      >
+                        <Bug className="w-6 h-6" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="relative z-10 mt-4 flex items-end gap-2">
@@ -2637,48 +2639,50 @@ export default function App() {
                     </h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    {isDemoMode && (
+                    {isDemoMode ? (
+                      <div className="flex items-center rounded-lg border border-blue-200 dark:border-blue-800 overflow-hidden shadow-sm">
+                        <button
+                          onClick={() =>
+                            setNodeB((prev) => ({
+                              ...prev,
+                              uv395: Math.max(0, prev.uv395 - 1),
+                            }))
+                          }
+                          className="px-2.5 py-2 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors text-base font-bold leading-none border-r border-blue-200 dark:border-blue-800"
+                          title="Kurangi tangkapan (-1)"
+                          aria-label="Kurangi tangkapan Node B"
+                        >
+                          −
+                        </button>
+                        <button
+                          onClick={() =>
+                            setNodeB((prev) => ({
+                              ...prev,
+                              uv395: prev.uv395 + 1,
+                            }))
+                          }
+                          className="px-2.5 py-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors text-base font-bold leading-none"
+                          title="Tambah tangkapan (+1)"
+                          aria-label="Tambah tangkapan Node B"
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : (
                       <button
-                        onClick={() =>
-                          setNodeB((prev) => ({
-                            ...prev,
-                            uv395: Math.max(0, prev.uv395 - 1),
-                          }))
-                        }
-                        className="w-12 h-12 rounded-full flex items-center justify-center text-red-600 dark:text-red-400 bg-red-200 dark:bg-red-900/60 transition-transform cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
-                        title="Kurangi tangkapan (-1)"
-                      >
-                        <Bug className="w-6 h-6" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        if (isDemoMode) {
-                          setNodeB((prev) => ({
-                            ...prev,
-                            uv395: prev.uv395 + 1,
-                          }));
-                        } else {
+                        onClick={() => {
                           setResetOriginNode("B");
                           setResetTarget("B");
                           setResetScope("dashboard");
                           setIsResetModalOpen(true);
-                        }
-                      }}
-                      className={cn(
-                        "w-12 h-12 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-transform shadow-sm cursor-pointer hover:scale-110 active:scale-95",
-                        isDemoMode
-                          ? "bg-blue-200 dark:bg-blue-900/60"
-                          : "bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60",
-                      )}
-                      title={
-                        isDemoMode
-                          ? "Tambah tangkapan (+1)"
-                          : "Reset tangkapan Node B"
-                      }
-                    >
-                      <Bug className="w-6 h-6" />
-                    </button>
+                        }}
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-transform shadow-sm cursor-pointer hover:scale-110 active:scale-95"
+                        title="Reset tangkapan Node B"
+                        aria-label="Reset tangkapan Node B"
+                      >
+                        <Bug className="w-6 h-6" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="relative z-10 mt-4 flex items-end gap-2">
@@ -3495,15 +3499,14 @@ export default function App() {
                     <Bug className="w-5 h-5 text-emerald-500" />
                     Log Deteksi Sensor (Real-time)
                   </h3>
-                  <div className="flex gap-2 items-center">
+                  <div className="flex gap-1.5 items-center">
                     <button
                       aria-label="Unduh database Excel"
                       onClick={handleDownloadExcel}
-                      className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 transition-colors text-sm font-semibold"
+                      className="p-2 rounded-lg text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 transition-colors"
                       title="Unduh Database Lengkap (Excel)"
                     >
                       <Download className="w-4 h-4" />
-                      <span className="hidden sm:inline">Unduh Excel</span>
                     </button>
                     <button
                       aria-label="Reset semua log deteksi"
@@ -3511,17 +3514,16 @@ export default function App() {
                         setLogResetScope("dashboard");
                         setIsLogResetModalOpen(true);
                       }}
-                      className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-orange-700 bg-orange-100 hover:bg-orange-200 dark:text-orange-300 dark:bg-orange-900/40 dark:hover:bg-orange-900/60 transition-colors text-sm font-semibold"
+                      className="p-2 rounded-lg text-orange-700 bg-orange-100 hover:bg-orange-200 dark:text-orange-300 dark:bg-orange-900/40 dark:hover:bg-orange-900/60 transition-colors"
                       title="Reset semua log deteksi"
                     >
                       <RotateCcw className="w-4 h-4" />
-                      <span className="hidden sm:inline">Reset Log</span>
                     </button>
                     <button
                       aria-label="Simpan ke Google Sheet"
                       onClick={syncToGoogleSheet}
                       disabled={isSyncingSheet}
-                      className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200 dark:text-blue-300 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 transition-colors text-sm font-semibold disabled:opacity-50"
+                      className="p-2 rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200 dark:text-blue-300 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 transition-colors disabled:opacity-50"
                       title="Kirim ke Google Sheet"
                     >
                       {isSyncingSheet ? (
@@ -3529,16 +3531,15 @@ export default function App() {
                       ) : (
                         <Database className="w-4 h-4" />
                       )}
-                      <span className="hidden sm:inline">Simpan API</span>
                     </button>
                     {isDemoMode && (
                       <button
                         aria-label="Sinkronisasi log demo"
                         onClick={generateLogsSync}
-                        className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 transition-colors"
-                        title="Sinkronisasi Log"
+                        className="p-2 rounded-lg text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 transition-colors"
+                        title="Sinkronisasi Log Demo"
                       >
-                        <RotateCcw className="w-5 h-5" />
+                        <RotateCcw className="w-4 h-4" />
                       </button>
                     )}
                   </div>
