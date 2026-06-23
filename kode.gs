@@ -278,6 +278,10 @@ function doPost(e) {
           sheet.insertSheet("Lingkungan" + modeSuffix);
         if (sLing.getLastRow() === 0) {
           sLing.appendRow(["Waktu", "Node", "Suhu (°C)", "Kelembaban (%)", "Timestamp_ms"]);
+        } else {
+          // Perbaiki header kolom E jika sheet lama (sebelum Timestamp_ms ditambahkan)
+          var headerE = sLing.getRange(1, 5).getValue();
+          if (!headerE) sLing.getRange(1, 5).setValue("Timestamp_ms");
         }
 
         // Ambil timestamp yang sudah ada untuk menghindari baris duplikat

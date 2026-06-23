@@ -16,6 +16,9 @@ export default defineConfig(({mode}) => {
         devOptions: {
           enabled: process.env.DISABLE_HMR !== 'true'
         },
+        workbox: {
+          importScripts: ['sw-custom.js'],
+        },
         manifest: {
           name: 'Dashboard Tangkapan Ngengat',
           short_name: 'Ngengat Dash',

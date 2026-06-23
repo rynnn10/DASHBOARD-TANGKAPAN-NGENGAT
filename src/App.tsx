@@ -689,7 +689,26 @@ export default function App() {
     updateServiceWorker,
   } = useRegisterSW();
 
-  // Tangkap event beforeinstallprompt untuk tombol install PWA custom
+  // ── Notifikasi browser (Notifications API) ──────────────────────────────
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
+    () => ('Notification' in window ? Notification.permission : 'denied'),
+  );
+
+  // ── PWA back button (Android) → popup konfirmasi keluar ─────────────────
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  useEffect(() => {
+    const isPwa = window.matchMedia('(display-mode: standalone)').matches;
+    if (!isPwa) return;
+    window.history.pushState({ pwa: true }, '');
+    const handler = () => {
+      setShowExitConfirm(true);
+      window.history.pushState({ pwa: true }, '');
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, []);
+
+  // ── Tangkap event beforeinstallprompt untuk tombol install PWA custom ────
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [installDismissed, setInstallDismissed] = useState(false);
   useEffect(() => {
@@ -807,11 +826,15 @@ export default function App() {
   // Signal untuk memicu auto-sync setelah data buffer IR tiba
   const [bufferFlushSignal, setBufferFlushSignal] = useState(0);
 
-  const dhtBuiltChartData = React.useMemo(
-    () =>
-      buildDhtChartFromHistory(dhtHistoryAll, dhtTimeRange, dhtTimeDuration),
-    [dhtHistoryAll, dhtTimeRange, dhtTimeDuration],
-  );
+  // Merge data sheet (dhtHistoryAll) + live MQTT sesi ini (dhtHistory) tanpa duplikat
+  const dhtBuiltChartData = React.useMemo(() => {
+    const storedTs = new Set(dhtHistoryAll.map(h => h.timestamp));
+    const merged = [
+      ...dhtHistoryAll,
+      ...dhtHistory.filter(h => !storedTs.has(h.timestamp)),
+    ];
+    return buildDhtChartFromHistory(merged, dhtTimeRange, dhtTimeDuration);
+  }, [dhtHistoryAll, dhtHistory, dhtTimeRange, dhtTimeDuration]);
 
   const [isDemoMode, setIsDemoMode] = useState(
     () => localStorage.getItem("isDemoMode") !== "false",
@@ -916,6 +939,35 @@ export default function App() {
     }, 1500);
     return () => clearTimeout(timer);
   }, [loginSuccess]);
+
+  // ── Kirim config ke Service Worker untuk notifikasi background ──────────
+  const sendConfigToSW = React.useCallback(
+    (a: number, b: number) => {
+      if (navigator.serviceWorker?.controller && userProfile && SCRIPT_URL) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'NOTIF_CONFIG',
+          config: { scriptUrl: SCRIPT_URL, email: userProfile.email, lastA: a, lastB: b },
+        });
+      }
+    },
+    [userProfile],
+  );
+
+  // Minta izin notifikasi & daftar Periodic Background Sync
+  const requestNotifPermission = async () => {
+    if (!('Notification' in window)) return;
+    const perm = await Notification.requestPermission();
+    setNotifPermission(perm);
+    if (perm === 'granted') {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await (reg as any).periodicSync?.register('check-ngengat-update', {
+          minInterval: 30 * 60 * 1000,
+        });
+      } catch (_) { /* browser tidak support Periodic Sync */ }
+      sendConfigToSW(nodeA.uv365, nodeB.uv395);
+    }
+  };
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState("");
@@ -1416,6 +1468,13 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [bufferFlushSignal, userProfile, isDemoMode]);
+
+  // Update config SW saat jumlah tangkapan berubah (untuk notif background)
+  useEffect(() => {
+    if (!isDemoMode && notifPermission === 'granted') {
+      sendConfigToSW(nodeA.uv365, nodeB.uv395);
+    }
+  }, [nodeA.uv365, nodeB.uv395, notifPermission, isDemoMode, sendConfigToSW]);
 
   // 1. TAMBAHKAN INI: Fungsi Fetch Data awal dari Google Sheet
   useEffect(() => {
@@ -2398,6 +2457,45 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Popup konfirmasi keluar — muncul saat tombol back ditekan di PWA Android */}
+      {showExitConfirm && (
+        <div
+          className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm anim-fade-in"
+          onClick={() => setShowExitConfirm(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-xs shadow-2xl anim-scale-in"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <Bug className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800 dark:text-gray-100">Keluar dari aplikasi?</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Monitoring real-time akan berhenti saat aplikasi ditutup.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => { setShowExitConfirm(false); window.history.go(-2); }}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
+              >
+                Keluar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Decorative Blur Backgrounds */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] dark:opacity-[0.02]">
@@ -5792,10 +5890,10 @@ export default function App() {
 
                     <hr className="border-gray-200 dark:border-gray-700 my-2" />
 
-                    <div>
+                    <div className="space-y-2">
                       <label className="flex items-center justify-between cursor-pointer">
                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Notifikasi
+                          Notifikasi in-app
                         </span>
                         <div className="relative">
                           <input
@@ -5814,6 +5912,37 @@ export default function App() {
                           ></div>
                         </div>
                       </label>
+                      {/* Notifikasi background (push ke browser) */}
+                      {'Notification' in window && (
+                        <div className="flex items-center justify-between pt-1">
+                          <div>
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                              Notifikasi background
+                            </p>
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                              {notifPermission === 'granted'
+                                ? 'Aktif — notifikasi dikirim saat app tertutup'
+                                : notifPermission === 'denied'
+                                ? 'Diblokir — aktifkan di pengaturan browser'
+                                : 'Izinkan agar notif muncul saat app tertutup'}
+                            </p>
+                          </div>
+                          {notifPermission === 'granted' ? (
+                            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-full">
+                              Aktif
+                            </span>
+                          ) : notifPermission === 'denied' ? (
+                            <span className="text-xs text-red-500">Diblokir</span>
+                          ) : (
+                            <button
+                              onClick={requestNotifPermission}
+                              className="text-xs font-medium bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              Izinkan
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div>
