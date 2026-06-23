@@ -26,6 +26,15 @@ function doPost(e) {
       return s.getDataRange().getValues().slice(1);
     }
 
+    // Helper: beri warna header sheet sesuai tema data
+    function styleHeader(s, numCols, bgColor) {
+      s.getRange(1, 1, 1, numCols)
+        .setBackground(bgColor)
+        .setFontColor('#ffffff')
+        .setFontWeight('bold');
+      try { if (s.getFrozenRows() < 1) s.setFrozenRows(1); } catch(e) {}
+    }
+
     // Sheet lama (backward compat) — cek juga saat login/register agar akun lama tetap bisa masuk
     var sUsersDemo  = sheet.getSheetByName("Users_Demo");
     var sUsersAsli  = sheet.getSheetByName("Users_DataAsli");
@@ -36,8 +45,7 @@ function doPost(e) {
     // ============================================
     if (sUsers.getLastRow() === 0) {
       sUsers.appendRow(["Email", "Password", "Name", "PhotoURL", "CoverURL", "Dibuat Sejak"]);
-      sUsers.setFrozenRows(1);
-      sUsers.getRange(1, 1, 1, 6).setFontWeight("bold");
+      styleHeader(sUsers, 6, '#7c3aed');
     }
 
     if (data.action === "register") {
@@ -124,8 +132,7 @@ function doPost(e) {
       var sLog = sheet.getSheetByName("Log_Login") || sheet.insertSheet("Log_Login");
       if (sLog.getLastRow() === 0) {
         sLog.appendRow(["Waktu", "Email", "IP Publik", "Kota", "Negara", "Perangkat/Browser", "Mode", "Status"]);
-        sLog.setFrozenRows(1);
-        sLog.getRange(1, 1, 1, 8).setFontWeight("bold");
+        styleHeader(sLog, 8, '#1e40af');
       }
       sLog.appendRow([
         new Date().toLocaleString("id-ID"),
@@ -149,8 +156,7 @@ function doPost(e) {
       var sJadwal = sheet.getSheetByName("Jadwal_Alarm") || sheet.insertSheet("Jadwal_Alarm");
       if (sJadwal.getLastRow() === 0) {
         sJadwal.appendRow(["Diperbarui", "OlehEmail", "JadwalJSON"]);
-        sJadwal.setFrozenRows(1);
-        sJadwal.getRange(1, 1, 1, 3).setFontWeight("bold");
+        styleHeader(sJadwal, 3, '#b45309');
       }
       // Selalu overwrite baris data (baris 2) — hanya simpan versi terbaru
       if (sJadwal.getLastRow() < 2) {
@@ -190,13 +196,8 @@ function doPost(e) {
           sheet.getSheetByName("Logs" + modeSuffix) ||
           sheet.insertSheet("Logs" + modeSuffix);
         sL.clear();
-        sL.appendRow([
-          "ID",
-          "Waktu",
-          "Sumber Node",
-          "Aksi Deteksi",
-          "TimestampISO",
-        ]);
+        sL.appendRow(["ID","Waktu","Sumber Node","Aksi Deteksi","TimestampISO"]);
+        styleHeader(sL, 5, '#be123c');
 
         var rL = data.logs.map((l) => [
           l.id,
@@ -215,14 +216,8 @@ function doPost(e) {
           sheet.getSheetByName("Status" + modeSuffix) ||
           sheet.insertSheet("Status" + modeSuffix);
         sS.clear();
-        sS.appendRow([
-          "Nama Node",
-          "Total",
-          "Status",
-          "Baterai",
-          "Tegangan",
-          "LED",
-        ]);
+        sS.appendRow(["Nama Node","Total","Status","Baterai","Tegangan","LED"]);
+        styleHeader(sS, 6, '#047857');
         sS.getRange(2, 1, 2, 6).setValues([
           [
             "Node A (365nm)",
@@ -250,6 +245,7 @@ function doPost(e) {
           sheet.insertSheet("Ringkasan" + modeSuffix);
         sRing.clear();
         sRing.appendRow(["Parameter", "Nilai"]);
+        styleHeader(sRing, 2, '#4338ca');
         sRing.getRange(2, 1, 2, 2).setValues([
           ["Node A (365nm)", data.nodeA.uv365],
           ["Node B (395nm)", data.nodeB.uv395],
@@ -267,6 +263,7 @@ function doPost(e) {
           sheet.insertSheet("Grafik" + modeSuffix);
         sC.clear();
         sC.appendRow(["Waktu (Titik)", "Node A (365nm)", "Node B (395nm)"]);
+        styleHeader(sC, 3, '#1d4ed8');
         var rC = data.chartData.map((c) => [c.time, c.NodeA, c.NodeB]);
         if (rC.length > 0) sC.getRange(2, 1, rC.length, 3).setValues(rC);
       }
@@ -278,6 +275,7 @@ function doPost(e) {
           sheet.insertSheet("Lingkungan" + modeSuffix);
         if (sLing.getLastRow() === 0) {
           sLing.appendRow(["Waktu", "Node", "Suhu (°C)", "Kelembaban (%)", "Timestamp_ms"]);
+          styleHeader(sLing, 5, '#0e7490');
         } else {
           // Perbaiki header kolom E jika sheet lama (sebelum Timestamp_ms ditambahkan)
           var headerE = sLing.getRange(1, 5).getValue();
@@ -459,7 +457,7 @@ function doPost(e) {
         if (!sRata) sRata = sheet.insertSheet("RataRata" + modeSuffix);
         if (sRata.getLastRow() === 0) {
           sRata.appendRow(["Waktu Update","Avg Suhu A (°C)","Avg Hum A (%)","Avg Suhu B (°C)","Avg Hum B (%)","Total Data"]);
-          sRata.getRange(1, 1, 1, 6).setFontWeight("bold");
+          styleHeader(sRata, 6, '#0f766e');
         }
         var rataRow = [new Date().toLocaleString("id-ID"), rataRata.A.temp, rataRata.A.hum, rataRata.B.temp, rataRata.B.hum, ObjectLingkungan.length];
         if (sRata.getLastRow() <= 1) { sRata.appendRow(rataRow); }

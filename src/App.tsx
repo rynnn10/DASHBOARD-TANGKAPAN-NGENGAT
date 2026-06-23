@@ -116,13 +116,26 @@ function logNodeKey(source: string): "NodeA" | "NodeB" | null {
   return null;
 }
 
+// Format timestamp bucket untuk tooltip grafik
+function fmtBucketTs(startMs: number): string {
+  const d = new Date(startMs);
+  const hari = HARI_NAMA[d.getDay()];
+  const tgl = d.getDate();
+  const bln = BULAN_NAMA[d.getMonth()];
+  const yr = d.getFullYear();
+  const jam = d.getHours(), mnt = d.getMinutes();
+  const waktu = (jam || mnt) ? ` ${String(jam).padStart(2,'0')}:${String(mnt).padStart(2,'0')}` : '';
+  return `${hari}, ${tgl} ${bln} ${yr}${waktu}`;
+}
+
 // Bangun data grafik time-series dari LOG NYATA (dipakai di Mode Asli).
 // Mengembalikan [] jika tidak ada tangkapan sama sekali (agar empty-state tampil).
 function buildChartFromLogs(
   logs: any[],
-  range: "hari" | "minggu" | "bulan" | "tahun",
+  range: "hari" | "minggu" | "bulan" | "tahun" | "kustom",
   duration: string,
-): { time: string; NodeA: number; NodeB: number }[] {
+  customRange?: { start: number; end: number },
+): { time: string; startMs: number; NodeA: number; NodeB: number }[] {
   const now = new Date();
   const DAY = 86400000;
   const startOfDay = (d: Date) =>
@@ -130,7 +143,34 @@ function buildChartFromLogs(
 
   const buckets: { time: string; start: number; end: number }[] = [];
 
-  if (range === "hari") {
+  if (range === "kustom") {
+    if (!customRange || !customRange.start || !customRange.end) return [];
+    const { start, end } = customRange;
+    const totalDays = Math.ceil((end - start) / DAY);
+    if (totalDays <= 0) return [];
+    if (totalDays <= 45) {
+      for (let i = 0; i < totalDays; i++) {
+        const s = start + i * DAY;
+        const d = new Date(s);
+        buckets.push({ time: `${d.getDate()}/${d.getMonth() + 1}`, start: s, end: s + DAY });
+      }
+    } else if (totalDays <= 182) {
+      const weeks = Math.ceil(totalDays / 7);
+      for (let i = 0; i < weeks; i++) {
+        const s = start + i * 7 * DAY;
+        const d = new Date(s);
+        buckets.push({ time: `${d.getDate()}/${d.getMonth() + 1}`, start: s, end: Math.min(s + 7 * DAY, end + 1) });
+      }
+    } else {
+      let cur = new Date(new Date(start).getFullYear(), new Date(start).getMonth(), 1);
+      const endD = new Date(end);
+      while (cur <= endD) {
+        const next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+        buckets.push({ time: `${BULAN_NAMA[cur.getMonth()]} ${cur.getFullYear()}`, start: cur.getTime(), end: next.getTime() });
+        cur = next;
+      }
+    }
+  } else if (range === "hari") {
     if (duration === "hari_ini") {
       const base = startOfDay(now);
       for (let h = 0; h < 24; h++) {
@@ -227,7 +267,7 @@ function buildChartFromLogs(
     }
   }
 
-  const result = buckets.map((b) => ({ time: b.time, NodeA: 0, NodeB: 0 }));
+  const result = buckets.map((b) => ({ time: b.time, startMs: b.start, NodeA: 0, NodeB: 0 }));
   for (const log of logs || []) {
     const ts =
       typeof log.timestamp === "number"
@@ -255,10 +295,12 @@ function buildDhtChartFromHistory(
     temp: number;
     humidity: number;
   }[],
-  range: "hari" | "minggu" | "bulan" | "tahun",
+  range: "hari" | "minggu" | "bulan" | "tahun" | "kustom",
   duration: string,
+  customRange?: { start: number; end: number },
 ): {
   time: string;
+  startMs: number;
   tempA: number | null;
   humA: number | null;
   tempB: number | null;
@@ -271,7 +313,34 @@ function buildDhtChartFromHistory(
 
   const buckets: { time: string; start: number; end: number }[] = [];
 
-  if (range === "hari") {
+  if (range === "kustom") {
+    if (!customRange || !customRange.start || !customRange.end) return [];
+    const { start, end } = customRange;
+    const totalDays = Math.ceil((end - start) / DAY);
+    if (totalDays <= 0) return [];
+    if (totalDays <= 45) {
+      for (let i = 0; i < totalDays; i++) {
+        const s = start + i * DAY;
+        const d = new Date(s);
+        buckets.push({ time: `${d.getDate()}/${d.getMonth() + 1}`, start: s, end: s + DAY });
+      }
+    } else if (totalDays <= 182) {
+      const weeks = Math.ceil(totalDays / 7);
+      for (let i = 0; i < weeks; i++) {
+        const s = start + i * 7 * DAY;
+        const d = new Date(s);
+        buckets.push({ time: `${d.getDate()}/${d.getMonth() + 1}`, start: s, end: Math.min(s + 7 * DAY, end + 1) });
+      }
+    } else {
+      let cur = new Date(new Date(start).getFullYear(), new Date(start).getMonth(), 1);
+      const endD = new Date(end);
+      while (cur <= endD) {
+        const next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+        buckets.push({ time: `${BULAN_NAMA[cur.getMonth()]} ${cur.getFullYear()}`, start: cur.getTime(), end: next.getTime() });
+        cur = next;
+      }
+    }
+  } else if (range === "hari") {
     if (duration === "hari_ini") {
       const base = startOfDay(now);
       for (let h = 0; h < 24; h++) {
@@ -400,24 +469,39 @@ function buildDhtChartFromHistory(
 
   return buckets.map((b, i) => ({
     time: b.time,
-    tempA:
-      accum[i].cntA > 0
-        ? Number((accum[i].sumTempA / accum[i].cntA).toFixed(1))
-        : null,
-    humA:
-      accum[i].cntA > 0
-        ? Number((accum[i].sumHumA / accum[i].cntA).toFixed(1))
-        : null,
-    tempB:
-      accum[i].cntB > 0
-        ? Number((accum[i].sumTempB / accum[i].cntB).toFixed(1))
-        : null,
-    humB:
-      accum[i].cntB > 0
-        ? Number((accum[i].sumHumB / accum[i].cntB).toFixed(1))
-        : null,
+    startMs: b.start,
+    tempA: accum[i].cntA > 0 ? Number((accum[i].sumTempA / accum[i].cntA).toFixed(1)) : null,
+    humA:  accum[i].cntA > 0 ? Number((accum[i].sumHumA  / accum[i].cntA).toFixed(1)) : null,
+    tempB: accum[i].cntB > 0 ? Number((accum[i].sumTempB / accum[i].cntB).toFixed(1)) : null,
+    humB:  accum[i].cntB > 0 ? Number((accum[i].sumHumB  / accum[i].cntB).toFixed(1)) : null,
   }));
 }
+
+// Custom tooltip untuk semua grafik — menampilkan "Hari, Tgl Bln Thn Jam:Mnt"
+const ChartTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  const startMs: number | undefined = payload[0]?.payload?.startMs;
+  return (
+    <div className="bg-gray-900 dark:bg-gray-950 border border-gray-700 rounded-xl p-2.5 shadow-2xl text-xs min-w-[140px]">
+      <p className="text-gray-300 font-semibold mb-1.5 pb-1.5 border-b border-gray-700">
+        {startMs ? fmtBucketTs(startMs) : label}
+      </p>
+      {payload.map((entry: any, i: number) => (
+        entry.value != null && (
+          <p key={i} className="flex items-center justify-between gap-3 mt-1">
+            <span className="flex items-center gap-1.5" style={{ color: entry.color }}>
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: entry.color }} />
+              {entry.name}
+            </span>
+            <span className="font-bold text-white">
+              {entry.value}{entry.unit ?? ''}
+            </span>
+          </p>
+        )
+      ))}
+    </div>
+  );
+};
 
 import ReactCrop, {
   type Crop,
@@ -819,9 +903,11 @@ export default function App() {
     { timestamp: number; node: string; temp: number; humidity: number }[]
   >([]);
   const [dhtTimeRange, setDhtTimeRange] = useState<
-    "hari" | "minggu" | "bulan" | "tahun"
+    "hari" | "minggu" | "bulan" | "tahun" | "kustom"
   >("hari");
   const [dhtTimeDuration, setDhtTimeDuration] = useState<string>("7_hari");
+  const [dhtCustomStart, setDhtCustomStart] = useState<string>("");
+  const [dhtCustomEnd, setDhtCustomEnd] = useState<string>("");
 
   // Signal untuk memicu auto-sync setelah data buffer IR tiba
   const [bufferFlushSignal, setBufferFlushSignal] = useState(0);
@@ -833,8 +919,15 @@ export default function App() {
       ...dhtHistoryAll,
       ...dhtHistory.filter(h => !storedTs.has(h.timestamp)),
     ];
+    if (dhtTimeRange === "kustom") {
+      if (!dhtCustomStart || !dhtCustomEnd) return [];
+      const start = new Date(dhtCustomStart + "T00:00:00").getTime();
+      const end = new Date(dhtCustomEnd + "T23:59:59").getTime();
+      if (start > end) return [];
+      return buildDhtChartFromHistory(merged, "kustom", "kustom", { start, end });
+    }
     return buildDhtChartFromHistory(merged, dhtTimeRange, dhtTimeDuration);
-  }, [dhtHistoryAll, dhtHistory, dhtTimeRange, dhtTimeDuration]);
+  }, [dhtHistoryAll, dhtHistory, dhtTimeRange, dhtTimeDuration, dhtCustomStart, dhtCustomEnd]);
 
   // Rata-rata suhu & kelembaban dari seluruh data yang tersedia
   const rataRataEnv = React.useMemo(() => {
@@ -1450,16 +1543,20 @@ export default function App() {
 
   // Chart Time Range State
   const [timeRange, setTimeRange] = useState<
-    "hari" | "minggu" | "bulan" | "tahun"
+    "hari" | "minggu" | "bulan" | "tahun" | "kustom"
   >("hari");
   const [timeDuration, setTimeDuration] = useState<string>("hari_ini");
+  const [catchCustomStart, setCatchCustomStart] = useState<string>("");
+  const [catchCustomEnd, setCatchCustomEnd] = useState<string>("");
 
   // Effect Chart Time Range State
   const [effectTimeRange, setEffectTimeRange] = useState<
-    "hari" | "minggu" | "bulan" | "tahun"
+    "hari" | "minggu" | "bulan" | "tahun" | "kustom"
   >("hari");
   const [effectTimeDuration, setEffectTimeDuration] =
     useState<string>("hari_ini");
+  const [effectCustomStart, setEffectCustomStart] = useState<string>("");
+  const [effectCustomEnd, setEffectCustomEnd] = useState<string>("");
   const [effectViewMode, setEffectViewMode] = useState<"total" | "rata-rata">(
     "total",
   );
@@ -1830,13 +1927,18 @@ export default function App() {
 
   // MODE ASLI: bangun grafik "Fluktuasi Waktu Kedatangan" dari logs nyata
   useEffect(() => {
-    if (isDemoMode) return; // Mode demo ditangani efek di atas
-    if (!userProfile) {
-      setChartData([]);
-      return;
+    if (isDemoMode) return;
+    if (!userProfile) { setChartData([]); return; }
+    if (timeRange === "kustom") {
+      if (!catchCustomStart || !catchCustomEnd) { setChartData([]); return; }
+      const start = new Date(catchCustomStart + "T00:00:00").getTime();
+      const end = new Date(catchCustomEnd + "T23:59:59").getTime();
+      if (start > end) { setChartData([]); return; }
+      setChartData(buildChartFromLogs(logs, "kustom", "kustom", { start, end }));
+    } else {
+      setChartData(buildChartFromLogs(logs, timeRange, timeDuration));
     }
-    setChartData(buildChartFromLogs(logs, timeRange, timeDuration));
-  }, [isDemoMode, userProfile, timeRange, timeDuration, logs]);
+  }, [isDemoMode, userProfile, timeRange, timeDuration, logs, catchCustomStart, catchCustomEnd]);
 
   useEffect(() => {
     if (!isDemoMode) return; // Mode Asli ditangani efek terpisah (dari logs nyata)
@@ -1956,12 +2058,18 @@ export default function App() {
 
   // MODE ASLI: bangun "Perbandingan Efektivitas" dari logs nyata
   useEffect(() => {
-    if (isDemoMode) return; // Mode demo ditangani efek di atas
-    if (!userProfile) {
-      setEffectChartData({ NodeA: 0, NodeB: 0 });
-      return;
+    if (isDemoMode) return;
+    if (!userProfile) { setEffectChartData({ NodeA: 0, NodeB: 0 }); return; }
+    let b;
+    if (effectTimeRange === "kustom") {
+      if (!effectCustomStart || !effectCustomEnd) { setEffectChartData({ NodeA: 0, NodeB: 0 }); return; }
+      const start = new Date(effectCustomStart + "T00:00:00").getTime();
+      const end = new Date(effectCustomEnd + "T23:59:59").getTime();
+      if (start > end) { setEffectChartData({ NodeA: 0, NodeB: 0 }); return; }
+      b = buildChartFromLogs(logs, "kustom", "kustom", { start, end });
+    } else {
+      b = buildChartFromLogs(logs, effectTimeRange, effectTimeDuration);
     }
-    const b = buildChartFromLogs(logs, effectTimeRange, effectTimeDuration);
     let sumA = b.reduce((acc, c) => acc + c.NodeA, 0);
     let sumB = b.reduce((acc, c) => acc + c.NodeB, 0);
     if (effectViewMode === "rata-rata") {
@@ -1970,14 +2078,7 @@ export default function App() {
       sumB = Math.round(sumB / n);
     }
     setEffectChartData({ NodeA: sumA, NodeB: sumB });
-  }, [
-    isDemoMode,
-    userProfile,
-    effectTimeRange,
-    effectTimeDuration,
-    effectViewMode,
-    logs,
-  ]);
+  }, [isDemoMode, userProfile, effectTimeRange, effectTimeDuration, effectViewMode, logs, effectCustomStart, effectCustomEnd]);
 
   const generateLogsSync = () => {
     const sources = ["Node A (UV 365 nm)", "Node B (UV 395 nm)"];
@@ -3125,7 +3226,15 @@ export default function App() {
                     Fluktuasi Waktu Kedatangan
                   </h3>
                   <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                    {
+                    {timeRange === "kustom" ? (
+                      <div className="flex gap-1.5 items-center w-full sm:w-auto">
+                        <input type="date" value={catchCustomStart} onChange={e => setCatchCustomStart(e.target.value)}
+                          className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                        <span className="text-gray-400 text-xs flex-shrink-0">–</span>
+                        <input type="date" value={catchCustomEnd} onChange={e => setCatchCustomEnd(e.target.value)}
+                          className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                      </div>
+                    ) : (
                       <select
                         aria-label="Pilih rentang waktu grafik"
                         value={timeDuration}
@@ -3161,24 +3270,24 @@ export default function App() {
                           </>
                         )}
                       </select>
-                    }
+                    )}
                     <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                      {(["hari", "minggu", "bulan", "tahun"] as const).map(
+                      {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                         (t) => (
                           <button
                             key={t}
                             onClick={() => {
                               setTimeRange(t);
-                              setTimeDuration(t + "_ini");
+                              setTimeDuration(t === "kustom" ? "kustom" : t + "_ini");
                             }}
                             className={cn(
-                              "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                              "px-2 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
                               timeRange === t
                                 ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm"
                                 : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
                             )}
                           >
-                            {t}
+                            {t === "kustom" ? "tanggal" : t}
                           </button>
                         ),
                       )}
@@ -3224,18 +3333,12 @@ export default function App() {
                         />
                         <XAxis dataKey="time" stroke="#6b7280" fontSize={12} />
                         <YAxis stroke="#6b7280" fontSize={12} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#1f2937",
-                            borderColor: "#374151",
-                            color: "white",
-                          }}
-                          cursor={false}
-                        />
+                        <Tooltip content={<ChartTooltip />} cursor={false} />
                         <Legend />
                         <Line
                           type="monotone"
                           dataKey="NodeA"
+                          name="Node A (365nm)"
                           stroke="#8b5cf6"
                           strokeWidth={3}
                           dot={{ r: 4 }}
@@ -3244,6 +3347,7 @@ export default function App() {
                         <Line
                           type="monotone"
                           dataKey="NodeB"
+                          name="Node B (395nm)"
                           stroke="#3b82f6"
                           strokeWidth={3}
                           dot={{ r: 4 }}
@@ -3269,41 +3373,51 @@ export default function App() {
                     </p>
                   </div>
                   <div className="flex flex-col gap-2 w-full sm:w-auto">
-                    <select
-                      aria-label="Pilih rentang waktu perbandingan"
-                      value={effectTimeDuration}
-                      onChange={(e) => setEffectTimeDuration(e.target.value)}
-                      className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
-                    >
-                      {effectTimeRange === "hari" && (
-                        <>
-                          <option value="hari_ini">Hari Ini</option>
-                          <option value="3_hari">3 Hari Terakhir</option>
-                          <option value="7_hari">7 Hari Terakhir</option>
-                        </>
-                      )}
-                      {effectTimeRange === "minggu" && (
-                        <>
-                          <option value="minggu_ini">Minggu Ini</option>
-                          <option value="4_minggu">4 Minggu Terakhir</option>
-                          <option value="7_minggu">7 Minggu Terakhir</option>
-                        </>
-                      )}
-                      {effectTimeRange === "bulan" && (
-                        <>
-                          <option value="bulan_ini">Bulan Ini</option>
-                          <option value="3_bulan">3 Bulan Terakhir</option>
-                          <option value="6_bulan">6 Bulan Terakhir</option>
-                        </>
-                      )}
-                      {effectTimeRange === "tahun" && (
-                        <>
-                          <option value="tahun_ini">Tahun Ini</option>
-                          <option value="2_tahun">1-2 Tahun Terakhir</option>
-                          <option value="5_tahun">5 Tahun Terakhir</option>
-                        </>
-                      )}
-                    </select>
+                    {effectTimeRange === "kustom" ? (
+                      <div className="flex gap-1.5 items-center w-full sm:w-auto">
+                        <input type="date" value={effectCustomStart} onChange={e => setEffectCustomStart(e.target.value)}
+                          className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                        <span className="text-gray-400 text-xs flex-shrink-0">–</span>
+                        <input type="date" value={effectCustomEnd} onChange={e => setEffectCustomEnd(e.target.value)}
+                          className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                      </div>
+                    ) : (
+                      <select
+                        aria-label="Pilih rentang waktu perbandingan"
+                        value={effectTimeDuration}
+                        onChange={(e) => setEffectTimeDuration(e.target.value)}
+                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                      >
+                        {effectTimeRange === "hari" && (
+                          <>
+                            <option value="hari_ini">Hari Ini</option>
+                            <option value="3_hari">3 Hari Terakhir</option>
+                            <option value="7_hari">7 Hari Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "minggu" && (
+                          <>
+                            <option value="minggu_ini">Minggu Ini</option>
+                            <option value="4_minggu">4 Minggu Terakhir</option>
+                            <option value="7_minggu">7 Minggu Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "bulan" && (
+                          <>
+                            <option value="bulan_ini">Bulan Ini</option>
+                            <option value="3_bulan">3 Bulan Terakhir</option>
+                            <option value="6_bulan">6 Bulan Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "tahun" && (
+                          <>
+                            <option value="tahun_ini">Tahun Ini</option>
+                            <option value="2_tahun">1-2 Tahun Terakhir</option>
+                            <option value="5_tahun">5 Tahun Terakhir</option>
+                          </>
+                        )}
+                      </select>
+                    )}
                     <div className="flex flex-col sm:flex-row items-stretch gap-2">
                       <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["total", "rata-rata"] as const).map((m) => (
@@ -3322,22 +3436,22 @@ export default function App() {
                         ))}
                       </div>
                       <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
-                        {(["hari", "minggu", "bulan", "tahun"] as const).map(
+                        {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                           (t) => (
                             <button
                               key={t}
                               onClick={() => {
                                 setEffectTimeRange(t);
-                                setEffectTimeDuration(t + "_ini");
+                                setEffectTimeDuration(t === "kustom" ? "kustom" : t + "_ini");
                               }}
                               className={cn(
-                                "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                                "px-2 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
                                 effectTimeRange === t
                                   ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm"
                                   : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
                               )}
                             >
-                              {t}
+                              {t === "kustom" ? "tanggal" : t}
                             </button>
                           ),
                         )}
@@ -3435,58 +3549,68 @@ export default function App() {
                   Grafik Suhu &amp; Kelembaban
                 </h3>
                 <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                  <select
-                    aria-label="Pilih rentang waktu grafik suhu"
-                    value={dhtTimeDuration}
-                    onChange={(e) => setDhtTimeDuration(e.target.value)}
-                    className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
-                  >
-                    {dhtTimeRange === "hari" && (
-                      <>
-                        <option value="hari_ini">Hari Ini</option>
-                        <option value="3_hari">3 Hari Terakhir</option>
-                        <option value="7_hari">7 Hari Terakhir</option>
-                      </>
-                    )}
-                    {dhtTimeRange === "minggu" && (
-                      <>
-                        <option value="minggu_ini">Minggu Ini</option>
-                        <option value="4_minggu">4 Minggu Terakhir</option>
-                        <option value="7_minggu">7 Minggu Terakhir</option>
-                      </>
-                    )}
-                    {dhtTimeRange === "bulan" && (
-                      <>
-                        <option value="bulan_ini">Bulan Ini</option>
-                        <option value="3_bulan">3 Bulan Terakhir</option>
-                        <option value="6_bulan">6 Bulan Terakhir</option>
-                      </>
-                    )}
-                    {dhtTimeRange === "tahun" && (
-                      <>
-                        <option value="tahun_ini">Tahun Ini</option>
-                        <option value="2_tahun">1-2 Tahun Terakhir</option>
-                        <option value="5_tahun">5 Tahun Terakhir</option>
-                      </>
-                    )}
-                  </select>
+                  {dhtTimeRange === "kustom" ? (
+                    <div className="flex gap-1.5 items-center w-full sm:w-auto">
+                      <input type="date" value={dhtCustomStart} onChange={e => setDhtCustomStart(e.target.value)}
+                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
+                      <span className="text-gray-400 text-xs flex-shrink-0">–</span>
+                      <input type="date" value={dhtCustomEnd} onChange={e => setDhtCustomEnd(e.target.value)}
+                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
+                    </div>
+                  ) : (
+                    <select
+                      aria-label="Pilih rentang waktu grafik suhu"
+                      value={dhtTimeDuration}
+                      onChange={(e) => setDhtTimeDuration(e.target.value)}
+                      className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
+                    >
+                      {dhtTimeRange === "hari" && (
+                        <>
+                          <option value="hari_ini">Hari Ini</option>
+                          <option value="3_hari">3 Hari Terakhir</option>
+                          <option value="7_hari">7 Hari Terakhir</option>
+                        </>
+                      )}
+                      {dhtTimeRange === "minggu" && (
+                        <>
+                          <option value="minggu_ini">Minggu Ini</option>
+                          <option value="4_minggu">4 Minggu Terakhir</option>
+                          <option value="7_minggu">7 Minggu Terakhir</option>
+                        </>
+                      )}
+                      {dhtTimeRange === "bulan" && (
+                        <>
+                          <option value="bulan_ini">Bulan Ini</option>
+                          <option value="3_bulan">3 Bulan Terakhir</option>
+                          <option value="6_bulan">6 Bulan Terakhir</option>
+                        </>
+                      )}
+                      {dhtTimeRange === "tahun" && (
+                        <>
+                          <option value="tahun_ini">Tahun Ini</option>
+                          <option value="2_tahun">1-2 Tahun Terakhir</option>
+                          <option value="5_tahun">5 Tahun Terakhir</option>
+                        </>
+                      )}
+                    </select>
+                  )}
                   <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                    {(["hari", "minggu", "bulan", "tahun"] as const).map(
+                    {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                       (t) => (
                         <button
                           key={t}
                           onClick={() => {
                             setDhtTimeRange(t);
-                            setDhtTimeDuration(t + "_ini");
+                            setDhtTimeDuration(t === "kustom" ? "kustom" : t + "_ini");
                           }}
                           className={cn(
-                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                            "px-2 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
                             dhtTimeRange === t
                               ? "bg-white dark:bg-gray-600 text-cyan-600 dark:text-cyan-400 shadow-sm"
                               : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
                           )}
                         >
-                          {t}
+                          {t === "kustom" ? "tanggal" : t}
                         </button>
                       ),
                     )}
@@ -3584,20 +3708,7 @@ export default function App() {
                             tickFormatter={(v) => `${v}°`}
                             width={44}
                           />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: "#1f2937",
-                              borderColor: "#374151",
-                              color: "white",
-                              fontSize: 12,
-                            }}
-                            formatter={
-                              ((value: any, name: any) => [
-                                `${value}°C`,
-                                name === "tempA" ? "Node A" : "Node B",
-                              ]) as any
-                            }
-                          />
+                          <Tooltip content={<ChartTooltip />} />
                           <Line
                             type="monotone"
                             dataKey="tempA"
@@ -3605,7 +3716,8 @@ export default function App() {
                             strokeWidth={2}
                             dot={false}
                             connectNulls
-                            name="tempA"
+                            name="Suhu A (°C)"
+                            unit="°C"
                           />
                           <Line
                             type="monotone"
@@ -3614,7 +3726,8 @@ export default function App() {
                             strokeWidth={2}
                             dot={false}
                             connectNulls
-                            name="tempB"
+                            name="Suhu B (°C)"
+                            unit="°C"
                           />
                         </LineChart>
                       </ResponsiveContainer>
@@ -3665,20 +3778,7 @@ export default function App() {
                             tickFormatter={(v) => `${v}%`}
                             width={44}
                           />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: "#1f2937",
-                              borderColor: "#374151",
-                              color: "white",
-                              fontSize: 12,
-                            }}
-                            formatter={
-                              ((value: any, name: any) => [
-                                `${value}%`,
-                                name === "humA" ? "Node A" : "Node B",
-                              ]) as any
-                            }
-                          />
+                          <Tooltip content={<ChartTooltip />} />
                           <Line
                             type="monotone"
                             dataKey="humA"
@@ -3686,7 +3786,8 @@ export default function App() {
                             strokeWidth={2}
                             dot={false}
                             connectNulls
-                            name="humA"
+                            name="Kelembaban A (%)"
+                            unit="%"
                           />
                           <Line
                             type="monotone"
@@ -3695,7 +3796,8 @@ export default function App() {
                             strokeWidth={2}
                             dot={false}
                             connectNulls
-                            name="humB"
+                            name="Kelembaban B (%)"
+                            unit="%"
                           />
                         </LineChart>
                       </ResponsiveContainer>
