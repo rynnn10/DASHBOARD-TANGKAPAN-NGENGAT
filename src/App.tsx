@@ -4358,13 +4358,28 @@ export default function App() {
                     </table>
                     <div className="mt-2 flex items-start gap-1.5 text-[11px] text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/10 rounded-lg p-2">
                       <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>
-                        <strong>SQW → RST</strong>: tambahkan resistor{" "}
-                        <strong>10kΩ</strong> dari 3.3V ke jalur SQW–RST
-                        sebagai pull-up. Saat alarm DS3231 aktif, SQW
-                        menjadi LOW → RST tertarik LOW → NodeMCU boot dari
-                        deep sleep.
-                      </span>
+                      <div className="space-y-1.5">
+                        <p>
+                          <strong>SQW ada di baris bawah modul</strong>{" "}
+                          (urutan kiri→kanan: 32K,{" "}
+                          <strong className="text-violet-600">SQW</strong>,
+                          SCL, SDA, VCC, GND).
+                        </p>
+                        <p>
+                          Pasang resistor <strong>10kΩ–15kΩ</strong> (12kΩ
+                          aman) sebagai <em>pull-up</em>:
+                        </p>
+                        <code className="block bg-violet-100 dark:bg-violet-900/30 rounded px-2 py-1 font-mono text-[10px] leading-relaxed whitespace-pre">
+{"3.3V ──[12kΩ]──┬── SQW (DS3231 baris bawah)"}
+{"\n               └── RST (NodeMCU)"}
+                        </code>
+                        <p>
+                          Resistor ini menjaga RST tetap HIGH. Saat alarm
+                          DS3231 aktif → SQW LOW → RST tertarik LOW → NodeMCU
+                          reset/boot. <strong>Jangan</strong> pasang resistor
+                          ke GND karena RST akan terus LOW (NodeMCU stuck).
+                        </p>
+                      </div>
                     </div>
                     <div className="mt-2 flex items-start gap-1.5 text-[11px] text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -4372,7 +4387,9 @@ export default function App() {
                         I2C menggunakan pin <strong>custom</strong> (D5 sebagai
                         SDA, D6 sebagai SCL), bukan default NodeMCU (D2/D1).
                         Ini agar D1 &amp; D2 tetap bebas untuk IR dan DHT22.
-                        Modul DS3231 umumnya sudah punya pull-up internal.
+                        Modul DS3231 umumnya sudah punya pull-up internal pada
+                        SDA &amp; SCL — resistor 12kΩ di atas khusus untuk
+                        jalur SQW→RST saja.
                       </span>
                     </div>
                   </div>
@@ -4435,68 +4452,85 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Pembagi Tegangan Baterai */}
+                {/* Voltage Sensor Module 25V */}
                 <div className="border border-green-200 dark:border-green-800/50 rounded-xl overflow-hidden">
                   <div className="bg-green-50 dark:bg-green-900/20 px-4 py-2.5 flex items-center gap-2">
                     <Battery className="w-4 h-4 text-green-500" />
                     <span className="font-semibold text-sm text-green-700 dark:text-green-300">
-                      Pembagi Tegangan — Monitor Baterai
+                      Voltage Sensor Module 25V — Monitor Baterai
                     </span>
                   </div>
-                  <div className="p-4">
+                  <div className="p-4 space-y-3">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                          <th className="text-left pb-2 font-semibold">
-                            Komponen
-                          </th>
-                          <th className="text-left pb-2 font-semibold">
-                            NodeMCU ESP8266 v3
-                          </th>
-                          <th className="text-left pb-2 font-semibold">
-                            Keterangan
-                          </th>
+                          <th className="text-left pb-2 font-semibold">Pin Modul</th>
+                          <th className="text-left pb-2 font-semibold">Disambung ke</th>
+                          <th className="text-left pb-2 font-semibold">Keterangan</th>
                         </tr>
                       </thead>
                       <tbody className="text-gray-700 dark:text-gray-300">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
-                          <td className="py-1.5 font-mono font-bold">
-                            V+ Baterai
-                          </td>
-                          <td className="py-1.5 font-mono">→ R1 (100kΩ) →</td>
-                          <td className="py-1.5">Resistor atas</td>
+                          <td className="py-1.5 font-mono font-bold text-red-500">+</td>
+                          <td className="py-1.5 font-mono font-bold">V+ Baterai</td>
+                          <td className="py-1.5">Positif baterai (maks 16.5V)</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
-                          <td className="py-1.5 font-mono font-bold">
-                            Titik tengah
-                          </td>
-                          <td className="py-1.5 font-mono text-blue-500 font-bold">
-                            A0
-                          </td>
-                          <td className="py-1.5">Masuk ke ADC</td>
+                          <td className="py-1.5 font-mono font-bold text-gray-500">−</td>
+                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5">Ground (sama dgn NodeMCU)</td>
                         </tr>
                         <tr>
-                          <td className="py-1.5 font-mono font-bold">
-                            R2 (33kΩ)
-                          </td>
-                          <td className="py-1.5 font-mono text-gray-500">
-                            ke GND
-                          </td>
-                          <td className="py-1.5">Resistor bawah</td>
+                          <td className="py-1.5 font-mono font-bold text-blue-500">S</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">A0 (NodeMCU)</td>
+                          <td className="py-1.5">Sinyal tegangan ke ADC</td>
                         </tr>
                       </tbody>
                     </table>
-                    <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/10 rounded-lg p-2">
+
+                    {/* Cara kerja modul */}
+                    <div className="flex items-start gap-1.5 text-[11px] text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>
-                        A0 NodeMCU v3 membaca <strong>0–3.3V</strong> (sudah
-                        ada pembagi internal di board). Pembagi tegangan
-                        eksternal R1=100kΩ &amp; R2=33kΩ menurunkan 4.2V baterai
-                        → ~1.04V (dalam jangkauan aman). Formula kode:{" "}
-                        <code className="font-mono bg-green-100 dark:bg-green-900/30 px-1 rounded">
-                          raw × (4.2 / 1023)
-                        </code>
-                      </span>
+                      <div className="space-y-1">
+                        <p>
+                          Modul memiliki voltage divider internal{" "}
+                          <strong>R1=30kΩ / R2=7.5kΩ</strong> (rasio 0.2×):
+                          pin S = V_baterai × 0.2. A0 NodeMCU membaca
+                          0–3.3V, sehingga <strong>maks baterai aman = 16.5V</strong>.
+                        </p>
+                        <p>
+                          Formula kode yang benar:{" "}
+                          <code className="font-mono bg-green-100 dark:bg-green-900/30 px-1 rounded">
+                            raw × (16.5 / 1023.0)
+                          </code>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Kalibrasi */}
+                    <div className="flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 rounded-lg p-2">
+                      <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div className="space-y-1.5">
+                        <p className="font-semibold">Cara Kalibrasi (perlu dilakukan 1×):</p>
+                        <ol className="list-decimal list-inside space-y-1 leading-relaxed">
+                          <li>Ukur tegangan baterai nyata dengan multimeter → catat <strong>V_aktual</strong>.</li>
+                          <li>Buka Serial Monitor Arduino IDE, lihat nilai <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded">raw</code> yang tercetak.</li>
+                          <li>Hitung faktor koreksi:{" "}
+                            <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">
+                              k = V_aktual / (raw × 16.5 / 1023)
+                            </code>
+                          </li>
+                          <li>Di <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded">main.cpp</code>, ubah formula menjadi:{" "}
+                            <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">
+                              raw × (16.5 / 1023.0) × k
+                            </code>
+                          </li>
+                        </ol>
+                        <p className="text-[10px] text-amber-600 dark:text-amber-500">
+                          Contoh: multimeter = 12.4V, raw = 753 →
+                          k = 12.4 / (753 × 0.01613) = 12.4 / 12.14 ≈ 1.021
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -4539,7 +4573,7 @@ export default function App() {
                         },
                         {
                           pin: "A0",
-                          func: "Baterai (ADC)",
+                          func: "Volt.Sensor (S)",
                           color: "text-green-600 dark:text-green-400",
                         },
                         {
