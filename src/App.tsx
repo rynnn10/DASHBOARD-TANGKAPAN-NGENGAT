@@ -637,6 +637,7 @@ const ImageUpload = ({
                 Potong {label}
               </h3>
               <button
+                aria-label="Tutup"
                 onClick={() => setCropModalOpen(false)}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
@@ -2380,6 +2381,7 @@ export default function App() {
               </div>
             </div>
             <button
+              aria-label="Tutup sidebar"
               className="md:hidden text-emerald-300 hover:text-white"
               onClick={() => setSidebarOpen(false)}
             >
@@ -2473,6 +2475,7 @@ export default function App() {
             <div className="flex items-center justify-between w-full lg:w-auto">
               <div className="flex items-center gap-3 sm:gap-4">
                 <button
+                  aria-label="Buka menu navigasi"
                   className="lg:hidden text-gray-500 hover:text-gray-700 dark:hover:text-white focus:outline-none"
                   onClick={() => setSidebarOpen(true)}
                 >
@@ -2493,6 +2496,7 @@ export default function App() {
                 </h2>
               </div>
               <button
+                aria-label="Buka pengaturan"
                 onClick={() => setSettingsOpen(true)}
                 className="lg:hidden w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none shrink-0"
               >
@@ -2521,6 +2525,7 @@ export default function App() {
                 </div>
               </div>
               <button
+                aria-label="Buka pengaturan"
                 onClick={() => setSettingsOpen(true)}
                 className="hidden lg:flex w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors items-center justify-center shadow-sm border border-gray-200 dark:border-gray-700 focus:outline-none shrink-0"
               >
@@ -3057,7 +3062,7 @@ export default function App() {
                       <Bug className="w-5 h-5 text-emerald-500" />
                       Perbandingan Efektivitas
                     </h3>
-                    <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 pl-7">
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 pl-7">
                       UV 365nm (Node A) vs UV 395nm (Node B)
                     </p>
                   </div>
@@ -3507,6 +3512,7 @@ export default function App() {
                     </button>
                     {isDemoMode && (
                       <button
+                        aria-label="Sinkronisasi log demo"
                         onClick={generateLogsSync}
                         className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 transition-colors"
                         title="Sinkronisasi Log"
@@ -3688,10 +3694,11 @@ export default function App() {
                   </p>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="eval-365" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Tangkapan Fisik 365 nm (Node A)
                       </label>
                       <input
+                        id="eval-365"
                         type="number"
                         value={manual365}
                         onChange={(e) => setManual365(e.target.value)}
@@ -3700,10 +3707,11 @@ export default function App() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="eval-395" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Tangkapan Fisik 395 nm (Node B)
                       </label>
                       <input
+                        id="eval-395"
                         type="number"
                         value={manual395}
                         onChange={(e) => setManual395(e.target.value)}
@@ -3786,6 +3794,7 @@ export default function App() {
                   Pengaturan Halaman
                 </h3>
                 <button
+                  aria-label="Tutup pengaturan"
                   onClick={() => setSettingsOpen(false)}
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                 >
@@ -4109,6 +4118,7 @@ export default function App() {
                   Panduan Wiring Modul ke NodeMCU ESP8266 v3
                 </h3>
                 <button
+                  aria-label="Tutup panduan wiring"
                   onClick={() => setIsWiringGuideOpen(false)}
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                 >
@@ -4581,7 +4591,7 @@ export default function App() {
                     <Clock className="w-5 h-5 text-violet-500" />
                     {editingSched ? (editingSched.id === -1 ? "Tambah Jadwal" : "Edit Jadwal") : "Jadwal Alarm DS3231"}
                   </h3>
-                  <button onClick={() => { setEditingSched(null); setIsScheduleOpen(false); }}
+                  <button aria-label="Tutup jadwal alarm" onClick={() => { setEditingSched(null); setIsScheduleOpen(false); }}
                     className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                     <X className="w-5 h-5" />
                   </button>
@@ -4594,8 +4604,9 @@ export default function App() {
                     /* ---- FORM EDIT ---- */
                     <div className="space-y-4">
                       <div>
-                        <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 block">Nama Jadwal</label>
+                        <label htmlFor="sched-name" className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1 block">Nama Jadwal</label>
                         <input
+                          id="sched-name"
                           value={schedLabel}
                           onChange={e => setSchedLabel(e.target.value)}
                           maxLength={21}
@@ -4633,15 +4644,15 @@ export default function App() {
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1 block">Waktu ON (mulai)</label>
-                          <input type="time" value={schedOnTime}
+                          <label htmlFor="sched-on" className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1 block">Waktu ON (mulai)</label>
+                          <input id="sched-on" type="time" value={schedOnTime}
                             onChange={e => setSchedOnTime(e.target.value)}
                             className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 border border-emerald-200 dark:border-emerald-800 rounded-lg text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-red-500 dark:text-red-400 mb-1 block">Waktu OFF (selesai)</label>
-                          <input type="time" value={schedOffTime}
+                          <label htmlFor="sched-off" className="text-xs font-semibold text-red-500 dark:text-red-400 mb-1 block">Waktu OFF (selesai)</label>
+                          <input id="sched-off" type="time" value={schedOffTime}
                             onChange={e => setSchedOffTime(e.target.value)}
                             className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 border border-red-200 dark:border-red-800 rounded-lg text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-400"
                           />
@@ -5155,6 +5166,7 @@ export default function App() {
                   Kelola Sheet Database
                 </h3>
                 <button
+                  aria-label="Tutup pengelola sheet"
                   onClick={() => setIsSheetManagerOpen(false)}
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                 >
@@ -5295,6 +5307,7 @@ export default function App() {
                       {loginMode === "login" ? "Masuk" : "Daftar Akun"}
                     </h3>
                     <button
+                      aria-label="Tutup"
                       onClick={() => setLoginModalOpen(false)}
                       className="text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
                       disabled={loginSuccess}
@@ -5334,10 +5347,11 @@ export default function App() {
                         className="space-y-5 max-h-[70vh] overflow-y-auto px-1 scrollbar-hide"
                       >
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
+                          <label htmlFor="login-email" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
                             Email
                           </label>
                           <input
+                            id="login-email"
                             type="email"
                             value={loginEmail}
                             onChange={(e) => {
@@ -5350,11 +5364,12 @@ export default function App() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
+                          <label htmlFor="login-password" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
                             Password
                           </label>
                           <div className="relative">
                             <input
+                              id="login-password"
                               type={showPassword ? "text" : "password"}
                               value={loginPassword}
                               onChange={(e) => {
@@ -5367,6 +5382,7 @@ export default function App() {
                             />
                             <button
                               type="button"
+                              aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
                               onClick={() => setShowPassword(!showPassword)}
                               className="absolute inset-y-0 right-2 flex items-center p-2 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-lg"
                             >
@@ -5406,10 +5422,11 @@ export default function App() {
                         {loginMode === "register" && (
                           <div className="space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
                             <div>
-                              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
+                              <label htmlFor="login-name" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
                                 Nama Lengkap
                               </label>
                               <input
+                                id="login-name"
                                 type="text"
                                 value={loginName}
                                 onChange={(e) => setLoginName(e.target.value)}
@@ -5503,10 +5520,11 @@ export default function App() {
                   </div>
                   <div className="p-5 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="edit-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Nama Lengkap
                       </label>
                       <input
+                        id="edit-name"
                         type="text"
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
