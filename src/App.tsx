@@ -248,10 +248,21 @@ function buildChartFromLogs(
 }
 
 function buildDhtChartFromHistory(
-  history: { timestamp: number; node: string; temp: number; humidity: number }[],
+  history: {
+    timestamp: number;
+    node: string;
+    temp: number;
+    humidity: number;
+  }[],
   range: "hari" | "minggu" | "bulan" | "tahun",
   duration: string,
-): { time: string; tempA: number | null; humA: number | null; tempB: number | null; humB: number | null }[] {
+): {
+  time: string;
+  tempA: number | null;
+  humA: number | null;
+  tempB: number | null;
+  humB: number | null;
+}[] {
   const now = new Date();
   const DAY = 86400000;
   const startOfDay = (d: Date) =>
@@ -264,7 +275,11 @@ function buildDhtChartFromHistory(
       const base = startOfDay(now);
       for (let h = 0; h < 24; h++) {
         const start = base + h * 3600000;
-        buckets.push({ time: `${String(h).padStart(2, "0")}:00`, start, end: start + 3600000 });
+        buckets.push({
+          time: `${String(h).padStart(2, "0")}:00`,
+          start,
+          end: start + 3600000,
+        });
       }
     } else {
       const count = duration === "3_hari" ? 3 : 7;
@@ -280,20 +295,35 @@ function buildDhtChartFromHistory(
     if (duration === "minggu_ini") {
       for (let i = 0; i < 7; i++) {
         const start = monday + i * DAY;
-        buckets.push({ time: HARI_NAMA[new Date(start).getDay()], start, end: start + DAY });
+        buckets.push({
+          time: HARI_NAMA[new Date(start).getDay()],
+          start,
+          end: start + DAY,
+        });
       }
     } else {
       const count = duration === "4_minggu" ? 4 : 7;
       for (let i = 0; i < count; i++) {
         const start = monday - (count - 1 - i) * 7 * DAY;
-        buckets.push({ time: `Minggu ke-${count - i}`, start, end: start + 7 * DAY });
+        buckets.push({
+          time: `Minggu ke-${count - i}`,
+          start,
+          end: start + 7 * DAY,
+        });
       }
     }
   } else if (range === "bulan") {
     if (duration === "bulan_ini") {
       const y = now.getFullYear();
       const m = now.getMonth();
-      ([[1, 8], [8, 15], [15, 22], [22, 32]] as [number, number][]).forEach((r, idx) => {
+      (
+        [
+          [1, 8],
+          [8, 15],
+          [15, 22],
+          [22, 32],
+        ] as [number, number][]
+      ).forEach((r, idx) => {
         buckets.push({
           time: `Minggu ${idx + 1}`,
           start: new Date(y, m, r[0]).getTime(),
@@ -303,7 +333,11 @@ function buildDhtChartFromHistory(
     } else {
       const count = duration === "3_bulan" ? 3 : 6;
       for (let i = 0; i < count; i++) {
-        const d = new Date(now.getFullYear(), now.getMonth() - (count - 1 - i), 1);
+        const d = new Date(
+          now.getFullYear(),
+          now.getMonth() - (count - 1 - i),
+          1,
+        );
         buckets.push({
           time: BULAN_NAMA[d.getMonth()],
           start: d.getTime(),
@@ -335,12 +369,17 @@ function buildDhtChartFromHistory(
   }
 
   const accum = buckets.map(() => ({
-    sumTempA: 0, cntA: 0, sumHumA: 0,
-    sumTempB: 0, cntB: 0, sumHumB: 0,
+    sumTempA: 0,
+    cntA: 0,
+    sumHumA: 0,
+    sumTempB: 0,
+    cntB: 0,
+    sumHumB: 0,
   }));
 
   for (const r of history || []) {
-    const ts = typeof r.timestamp === "number" ? r.timestamp : Number(r.timestamp);
+    const ts =
+      typeof r.timestamp === "number" ? r.timestamp : Number(r.timestamp);
     if (!ts) continue;
     for (let i = 0; i < buckets.length; i++) {
       if (ts >= buckets[i].start && ts < buckets[i].end) {
@@ -360,10 +399,22 @@ function buildDhtChartFromHistory(
 
   return buckets.map((b, i) => ({
     time: b.time,
-    tempA: accum[i].cntA > 0 ? Number((accum[i].sumTempA / accum[i].cntA).toFixed(1)) : null,
-    humA:  accum[i].cntA > 0 ? Number((accum[i].sumHumA  / accum[i].cntA).toFixed(1)) : null,
-    tempB: accum[i].cntB > 0 ? Number((accum[i].sumTempB / accum[i].cntB).toFixed(1)) : null,
-    humB:  accum[i].cntB > 0 ? Number((accum[i].sumHumB  / accum[i].cntB).toFixed(1)) : null,
+    tempA:
+      accum[i].cntA > 0
+        ? Number((accum[i].sumTempA / accum[i].cntA).toFixed(1))
+        : null,
+    humA:
+      accum[i].cntA > 0
+        ? Number((accum[i].sumHumA / accum[i].cntA).toFixed(1))
+        : null,
+    tempB:
+      accum[i].cntB > 0
+        ? Number((accum[i].sumTempB / accum[i].cntB).toFixed(1))
+        : null,
+    humB:
+      accum[i].cntB > 0
+        ? Number((accum[i].sumHumB / accum[i].cntB).toFixed(1))
+        : null,
   }));
 }
 
@@ -706,14 +757,17 @@ export default function App() {
   const [dhtHistoryAll, setDhtHistoryAll] = useState<
     { timestamp: number; node: string; temp: number; humidity: number }[]
   >([]);
-  const [dhtTimeRange, setDhtTimeRange] = useState<"hari" | "minggu" | "bulan" | "tahun">("hari");
+  const [dhtTimeRange, setDhtTimeRange] = useState<
+    "hari" | "minggu" | "bulan" | "tahun"
+  >("hari");
   const [dhtTimeDuration, setDhtTimeDuration] = useState<string>("hari_ini");
 
   // Signal untuk memicu auto-sync setelah data buffer IR tiba
   const [bufferFlushSignal, setBufferFlushSignal] = useState(0);
 
   const dhtBuiltChartData = React.useMemo(
-    () => buildDhtChartFromHistory(dhtHistoryAll, dhtTimeRange, dhtTimeDuration),
+    () =>
+      buildDhtChartFromHistory(dhtHistoryAll, dhtTimeRange, dhtTimeDuration),
     [dhtHistoryAll, dhtTimeRange, dhtTimeDuration],
   );
 
@@ -931,8 +985,13 @@ export default function App() {
     return (localStorage.getItem("espTargetNode") as "A" | "B") || "A";
   });
   const espTargetNodeRef = React.useRef(espTargetNode);
-  const mqttClientRef = React.useRef<ReturnType<typeof mqtt.connect> | null>(null);
-  const [relayMode, setRelayMode] = useState<{ A: "auto" | "manual"; B: "auto" | "manual" }>({ A: "auto", B: "auto" });
+  const mqttClientRef = React.useRef<ReturnType<typeof mqtt.connect> | null>(
+    null,
+  );
+  const [relayMode, setRelayMode] = useState<{
+    A: "auto" | "manual";
+    B: "auto" | "manual";
+  }>({ A: "auto", B: "auto" });
   useEffect(() => {
     espTargetNodeRef.current = espTargetNode;
   }, [espTargetNode]);
@@ -957,9 +1016,9 @@ export default function App() {
     A: Date.now(),
     B: Date.now(),
   });
-  const HEARTBEAT_TIMEOUT = 15000; // 15 detik — kurang dari 2x interval baterai Wemos (10 detik)
+  const HEARTBEAT_TIMEOUT = 15000; // 15 detik — kurang dari 2x interval publish baterai NodeMCU (10 detik)
 
-  // 2. Listener Real-Time MQTT dari Wemos D1 Mini
+  // 2. Listener Real-Time MQTT dari NodeMCU ESP8266
   useEffect(() => {
     if (isDemoMode) return;
 
@@ -1057,7 +1116,8 @@ export default function App() {
           }
         } else if (topic === "dashboard/ngengat/baterai") {
           // Jika data baterai berasal dari buffer dan fitur buffer baterai dinonaktifkan, abaikan
-          if (payload.buffered === true && !bufferBatteryEnabledRef.current) return;
+          if (payload.buffered === true && !bufferBatteryEnabledRef.current)
+            return;
 
           const nodeKey = payload.node === "B" ? "B" : "A";
           heartbeatRef.current[nodeKey] = Date.now();
@@ -1089,18 +1149,24 @@ export default function App() {
 
           // Simpan ke riwayat untuk sinkronisasi ke Google Sheet
           setDhtHistory((prev) =>
-            [...prev, { timestamp: now, node: nodeKey, temp, humidity }].slice(-200),
+            [...prev, { timestamp: now, node: nodeKey, temp, humidity }].slice(
+              -200,
+            ),
           );
 
-          setDhtHistoryAll((prev) =>
-            [...prev, { timestamp: now, node: nodeKey, temp, humidity }],
-          );
+          setDhtHistoryAll((prev) => [
+            ...prev,
+            { timestamp: now, node: nodeKey, temp, humidity },
+          ]);
         }
         if (topic === "dashboard/ngengat/settings") {
           if (typeof payload.bufferBattery === "boolean") {
             setBufferBatteryEnabled((prev) => {
               if (prev !== payload.bufferBattery) {
-                localStorage.setItem("bufferBatteryEnabled", String(payload.bufferBattery));
+                localStorage.setItem(
+                  "bufferBatteryEnabled",
+                  String(payload.bufferBattery),
+                );
               }
               return payload.bufferBattery;
             });
@@ -1245,7 +1311,14 @@ export default function App() {
     dhtHistory,
   });
   useEffect(() => {
-    dataRef.current = { logs, nodeA, nodeB, chartData, effectChartData, dhtHistory };
+    dataRef.current = {
+      logs,
+      nodeA,
+      nodeB,
+      chartData,
+      effectChartData,
+      dhtHistory,
+    };
   }, [logs, nodeA, nodeB, chartData, effectChartData, dhtHistory]);
 
   // Auto-sync setelah data buffer IR tiba — pastikan semua data masuk ke Sheet
@@ -1304,7 +1377,10 @@ export default function App() {
           if (result.data.effectChartData) {
             setEffectChartData(result.data.effectChartData);
           }
-          if (result.data.lingkunganHistory && result.data.lingkunganHistory.length > 0) {
+          if (
+            result.data.lingkunganHistory &&
+            result.data.lingkunganHistory.length > 0
+          ) {
             setDhtHistoryAll(result.data.lingkunganHistory);
           }
         }
@@ -1331,7 +1407,10 @@ export default function App() {
 
     // Demo DHT22 — data historis 30 hari agar semua rentang waktu tersedia
     const demoDhtHistory: {
-      timestamp: number; node: string; temp: number; humidity: number;
+      timestamp: number;
+      node: string;
+      temp: number;
+      humidity: number;
     }[] = [];
     const demoBaseTime = Date.now();
     for (let d = 29; d >= 0; d--) {
@@ -1356,8 +1435,16 @@ export default function App() {
     const demoLastA = demoDhtHistory[demoDhtHistory.length - 2];
     const demoLastB = demoDhtHistory[demoDhtHistory.length - 1];
     setDhtData({
-      A: { temp: demoLastA.temp, humidity: demoLastA.humidity, timestamp: Date.now() },
-      B: { temp: demoLastB.temp, humidity: demoLastB.humidity, timestamp: Date.now() },
+      A: {
+        temp: demoLastA.temp,
+        humidity: demoLastA.humidity,
+        timestamp: Date.now(),
+      },
+      B: {
+        temp: demoLastB.temp,
+        humidity: demoLastB.humidity,
+        timestamp: Date.now(),
+      },
     });
 
     let now = Date.now();
@@ -2031,7 +2118,7 @@ export default function App() {
         try {
           localStorage.setItem("userProfile", JSON.stringify(profile));
         } catch {
-          // localStorage mungkin diblokir browser tertentu (mode privat, dll)
+          // localStorage bisa diblokir di mode privat atau browser dengan privacy ketat
         }
         setLoginSuccess(true);
         // Kirim log aktivitas login secara async (tidak blokir UX)
@@ -3101,23 +3188,25 @@ export default function App() {
                     )}
                   </select>
                   <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                    {(["hari", "minggu", "bulan", "tahun"] as const).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => {
-                          setDhtTimeRange(t);
-                          setDhtTimeDuration(t + "_ini");
-                        }}
-                        className={cn(
-                          "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
-                          dhtTimeRange === t
-                            ? "bg-white dark:bg-gray-600 text-cyan-600 dark:text-cyan-400 shadow-sm"
-                            : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
-                        )}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                    {(["hari", "minggu", "bulan", "tahun"] as const).map(
+                      (t) => (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            setDhtTimeRange(t);
+                            setDhtTimeDuration(t + "_ini");
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                            dhtTimeRange === t
+                              ? "bg-white dark:bg-gray-600 text-cyan-600 dark:text-cyan-400 shadow-sm"
+                              : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
+                          )}
+                        >
+                          {t}
+                        </button>
+                      ),
+                    )}
                   </div>
                 </div>
               </div>
@@ -3128,7 +3217,7 @@ export default function App() {
                     Menunggu data sensor DHT22
                   </p>
                   <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
-                    Data akan muncul setelah Wemos terhubung.
+                    Data akan muncul setelah NodeMCU terhubung.
                   </p>
                 </div>
               ) : (
@@ -3139,15 +3228,21 @@ export default function App() {
                       <Thermometer className="w-3.5 h-3.5" /> Suhu (°C)
                       <span className="ml-auto flex gap-3 font-normal text-gray-500 dark:text-gray-400">
                         <span className="flex items-center gap-1">
-                          <span className="w-4 h-1.5 bg-orange-500 rounded inline-block" /> A
+                          <span className="w-4 h-1.5 bg-orange-500 rounded inline-block" />{" "}
+                          A
                         </span>
                         <span className="flex items-center gap-1">
-                          <span className="w-4 h-1.5 bg-pink-400 rounded inline-block" /> B
+                          <span className="w-4 h-1.5 bg-pink-400 rounded inline-block" />{" "}
+                          B
                         </span>
                       </span>
                     </p>
                     <div className="h-44">
-                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <ResponsiveContainer
+                        width="100%"
+                        height="100%"
+                        minWidth={0}
+                      >
                         <LineChart
                           data={dhtBuiltChartData}
                           margin={{ top: 5, right: 10, bottom: 5, left: 0 }}
@@ -3179,8 +3274,10 @@ export default function App() {
                               fontSize: 12,
                             }}
                             formatter={
-                              ((value: any, name: any) =>
-                                [`${value}°C`, name === "tempA" ? "Node A" : "Node B"]) as any
+                              ((value: any, name: any) => [
+                                `${value}°C`,
+                                name === "tempA" ? "Node A" : "Node B",
+                              ]) as any
                             }
                           />
                           <Line
@@ -3212,15 +3309,21 @@ export default function App() {
                       <Droplets className="w-3.5 h-3.5" /> Kelembaban (%)
                       <span className="ml-auto flex gap-3 font-normal text-gray-500 dark:text-gray-400">
                         <span className="flex items-center gap-1">
-                          <span className="w-4 h-1.5 bg-blue-500 rounded inline-block" /> A
+                          <span className="w-4 h-1.5 bg-blue-500 rounded inline-block" />{" "}
+                          A
                         </span>
                         <span className="flex items-center gap-1">
-                          <span className="w-4 h-1.5 bg-cyan-400 rounded inline-block" /> B
+                          <span className="w-4 h-1.5 bg-cyan-400 rounded inline-block" />{" "}
+                          B
                         </span>
                       </span>
                     </p>
                     <div className="h-44">
-                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <ResponsiveContainer
+                        width="100%"
+                        height="100%"
+                        minWidth={0}
+                      >
                         <LineChart
                           data={dhtBuiltChartData}
                           margin={{ top: 5, right: 10, bottom: 5, left: 0 }}
@@ -3252,8 +3355,10 @@ export default function App() {
                               fontSize: 12,
                             }}
                             formatter={
-                              ((value: any, name: any) =>
-                                [`${value}%`, name === "humA" ? "Node A" : "Node B"]) as any
+                              ((value: any, name: any) => [
+                                `${value}%`,
+                                name === "humA" ? "Node A" : "Node B",
+                              ]) as any
                             }
                           />
                           <Line
@@ -3694,7 +3799,10 @@ export default function App() {
                       onClick={() => {
                         const newVal = !bufferBatteryEnabled;
                         setBufferBatteryEnabled(newVal);
-                        localStorage.setItem("bufferBatteryEnabled", String(newVal));
+                        localStorage.setItem(
+                          "bufferBatteryEnabled",
+                          String(newVal),
+                        );
                         // Publish retained agar semua device sinkron
                         mqttClientRef.current?.publish(
                           "dashboard/ngengat/settings",
@@ -3736,14 +3844,19 @@ export default function App() {
                     Kontrol Relay Lampu UV
                   </label>
                   <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
-                    Kontrol manual lampu UV tiap node. <strong>Auto</strong> = ikuti jadwal DS3231 (ON 18:00 / OFF 06:00).
+                    Kontrol manual lampu UV tiap node. <strong>Auto</strong> =
+                    ikuti jadwal DS3231 (ON 18:00 / OFF 06:00).
                   </p>
                   <div className="space-y-2.5">
                     {(["A", "B"] as const).map((node) => {
                       const isOn = node === "A" ? nodeA.led : nodeB.led;
-                      const isOnline = node === "A" ? nodeA.online : nodeB.online;
+                      const isOnline =
+                        node === "A" ? nodeA.online : nodeB.online;
                       const mode = relayMode[node];
-                      const label = node === "A" ? "Node A — UV 365nm" : "Node B — UV 395nm";
+                      const label =
+                        node === "A"
+                          ? "Node A — UV 365nm"
+                          : "Node B — UV 395nm";
 
                       const publishRelay = (state: boolean) => {
                         if (!mqttClientRef.current) return;
@@ -3752,7 +3865,8 @@ export default function App() {
                           JSON.stringify({ node, state }),
                         );
                         setRelayMode((prev) => ({ ...prev, [node]: "manual" }));
-                        if (node === "A") setNodeA((p) => ({ ...p, led: state }));
+                        if (node === "A")
+                          setNodeA((p) => ({ ...p, led: state }));
                         else setNodeB((p) => ({ ...p, led: state }));
                       };
 
@@ -3785,13 +3899,23 @@ export default function App() {
                         >
                           <div className="flex items-center justify-between mb-2">
                             <div>
-                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{label}</p>
-                              <p className={`text-[10px] font-medium mt-0.5 ${statusColor}`}>{statusText}</p>
+                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                {label}
+                              </p>
+                              <p
+                                className={`text-[10px] font-medium mt-0.5 ${statusColor}`}
+                              >
+                                {statusText}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <button
-                              disabled={!isOnline || !mqttClientRef.current || isDemoMode}
+                              disabled={
+                                !isOnline ||
+                                !mqttClientRef.current ||
+                                isDemoMode
+                              }
                               onClick={() => publishRelay(false)}
                               className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                                 mode === "manual" && !isOn && isOnline
@@ -3802,7 +3926,11 @@ export default function App() {
                               OFF
                             </button>
                             <button
-                              disabled={!isOnline || !mqttClientRef.current || isDemoMode}
+                              disabled={
+                                !isOnline ||
+                                !mqttClientRef.current ||
+                                isDemoMode
+                              }
                               onClick={publishAuto}
                               className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                                 mode === "auto" && isOnline
@@ -3813,7 +3941,11 @@ export default function App() {
                               AUTO
                             </button>
                             <button
-                              disabled={!isOnline || !mqttClientRef.current || isDemoMode}
+                              disabled={
+                                !isOnline ||
+                                !mqttClientRef.current ||
+                                isDemoMode
+                              }
                               onClick={() => publishRelay(true)}
                               className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                                 mode === "manual" && isOn && isOnline
@@ -3881,14 +4013,16 @@ export default function App() {
         {isWiringGuideOpen && (
           <div
             className="fixed inset-0 bg-gray-900/50 dark:bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={(e) => e.target === e.currentTarget && setIsWiringGuideOpen(false)}
+            onClick={(e) =>
+              e.target === e.currentTarget && setIsWiringGuideOpen(false)
+            }
           >
             <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
               {/* Header */}
               <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 shrink-0 rounded-t-2xl">
                 <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
                   <Cable className="w-5 h-5 text-blue-500" />
-                  Panduan Wiring Modul ke Wemos D1 Mini
+                  Panduan Wiring Modul ke NodeMCU ESP8266 v3
                 </h3>
                 <button
                   onClick={() => setIsWiringGuideOpen(false)}
@@ -3900,49 +4034,71 @@ export default function App() {
 
               {/* Scrollable content */}
               <div className="overflow-y-auto p-5 space-y-4">
-
                 {/* Info */}
                 <div className="flex items-start gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-xs text-blue-700 dark:text-blue-300">
                   <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Berdasarkan kode <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded font-mono">main.cpp</code>. Pin yang sama berlaku untuk Node A dan Node B.</span>
+                  <span>
+                    Berdasarkan kode{" "}
+                    <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded font-mono">
+                      main.cpp
+                    </code>
+                    . Pin yang sama berlaku untuk Node A dan Node B.
+                  </span>
                 </div>
 
                 {/* DHT22 */}
                 <div className="border border-orange-200 dark:border-orange-800/50 rounded-xl overflow-hidden">
                   <div className="bg-orange-50 dark:bg-orange-900/20 px-4 py-2.5 flex items-center gap-2">
                     <Thermometer className="w-4 h-4 text-orange-500" />
-                    <span className="font-semibold text-sm text-orange-700 dark:text-orange-300">DHT22 — Suhu &amp; Kelembaban</span>
+                    <span className="font-semibold text-sm text-orange-700 dark:text-orange-300">
+                      DHT22 — Suhu &amp; Kelembaban
+                    </span>
                   </div>
                   <div className="p-4">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                          <th className="text-left pb-2 font-semibold">Pin DHT22</th>
-                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
-                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                          <th className="text-left pb-2 font-semibold">
+                            Pin DHT22
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            NodeMCU ESP8266 v3
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            Keterangan
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="text-gray-700 dark:text-gray-300 space-y-1">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">VCC</td>
-                          <td className="py-1.5 font-mono text-red-500">3.3V</td>
+                          <td className="py-1.5 font-mono text-red-500">
+                            3.3V
+                          </td>
                           <td className="py-1.5">Tegangan input</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">GND</td>
-                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5 font-mono text-gray-500">
+                            GND
+                          </td>
                           <td className="py-1.5">Ground</td>
                         </tr>
                         <tr>
                           <td className="py-1.5 font-mono font-bold">DATA</td>
-                          <td className="py-1.5 font-mono text-blue-500 font-bold">D2 (GPIO4)</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">
+                            D2 (GPIO4)
+                          </td>
                           <td className="py-1.5">Pin data sensor</td>
                         </tr>
                       </tbody>
                     </table>
                     <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/10 rounded-lg p-2">
                       <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>Tambahkan resistor <strong>10kΩ</strong> antara pin DATA dan VCC (pull-up). Tanpa ini sensor sering gagal baca.</span>
+                      <span>
+                        Tambahkan resistor <strong>10kΩ</strong> antara pin DATA
+                        dan VCC (pull-up). Tanpa ini sensor sering gagal baca.
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -3951,38 +4107,54 @@ export default function App() {
                 <div className="border border-purple-200 dark:border-purple-800/50 rounded-xl overflow-hidden">
                   <div className="bg-purple-50 dark:bg-purple-900/20 px-4 py-2.5 flex items-center gap-2">
                     <Bug className="w-4 h-4 text-purple-500" />
-                    <span className="font-semibold text-sm text-purple-700 dark:text-purple-300">Sensor IR — Deteksi Ngengat</span>
+                    <span className="font-semibold text-sm text-purple-700 dark:text-purple-300">
+                      Sensor IR — Deteksi Ngengat
+                    </span>
                   </div>
                   <div className="p-4">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                          <th className="text-left pb-2 font-semibold">Pin Sensor IR</th>
-                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
-                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                          <th className="text-left pb-2 font-semibold">
+                            Pin Sensor IR
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            NodeMCU ESP8266 v3
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            Keterangan
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="text-gray-700 dark:text-gray-300">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">VCC</td>
                           <td className="py-1.5 font-mono text-red-500">5V</td>
-                          <td className="py-1.5">Dari pin 5V Wemos</td>
+                          <td className="py-1.5">Dari pin VU (5V USB)</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">GND</td>
-                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5 font-mono text-gray-500">
+                            GND
+                          </td>
                           <td className="py-1.5">Ground</td>
                         </tr>
                         <tr>
                           <td className="py-1.5 font-mono font-bold">OUT</td>
-                          <td className="py-1.5 font-mono text-blue-500 font-bold">D1 (GPIO5)</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">
+                            D1 (GPIO5)
+                          </td>
                           <td className="py-1.5">Sinyal deteksi</td>
                         </tr>
                       </tbody>
                     </table>
                     <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>OUT bernilai <strong>LOW</strong> saat objek terdeteksi (active low). Sensitivitas bisa diatur lewat potensio di modul.</span>
+                      <span>
+                        OUT bernilai <strong>LOW</strong> saat objek terdeteksi
+                        (active low). Sensitivitas bisa diatur lewat potensio di
+                        modul.
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -3991,43 +4163,64 @@ export default function App() {
                 <div className="border border-cyan-200 dark:border-cyan-800/50 rounded-xl overflow-hidden">
                   <div className="bg-cyan-50 dark:bg-cyan-900/20 px-4 py-2.5 flex items-center gap-2">
                     <Clock className="w-4 h-4 text-cyan-500" />
-                    <span className="font-semibold text-sm text-cyan-700 dark:text-cyan-300">DS3231 RTC — Waktu Akurat</span>
+                    <span className="font-semibold text-sm text-cyan-700 dark:text-cyan-300">
+                      DS3231 RTC — Waktu Akurat
+                    </span>
                   </div>
                   <div className="p-4">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                          <th className="text-left pb-2 font-semibold">Pin DS3231</th>
-                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
-                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                          <th className="text-left pb-2 font-semibold">
+                            Pin DS3231
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            NodeMCU ESP8266 v3
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            Keterangan
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="text-gray-700 dark:text-gray-300">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">VCC</td>
-                          <td className="py-1.5 font-mono text-red-500">3.3V</td>
+                          <td className="py-1.5 font-mono text-red-500">
+                            3.3V
+                          </td>
                           <td className="py-1.5">Tegangan input</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">GND</td>
-                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5 font-mono text-gray-500">
+                            GND
+                          </td>
                           <td className="py-1.5">Ground</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">SDA</td>
-                          <td className="py-1.5 font-mono text-blue-500 font-bold">D5 (GPIO14)</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">
+                            D5 (GPIO14)
+                          </td>
                           <td className="py-1.5">I2C data (custom)</td>
                         </tr>
                         <tr>
                           <td className="py-1.5 font-mono font-bold">SCL</td>
-                          <td className="py-1.5 font-mono text-blue-500 font-bold">D6 (GPIO12)</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">
+                            D6 (GPIO12)
+                          </td>
                           <td className="py-1.5">I2C clock (custom)</td>
                         </tr>
                       </tbody>
                     </table>
                     <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>I2C menggunakan pin <strong>custom</strong> (D5/D6), bukan pin default I2C Wemos (D1/D2). Modul DS3231 umumnya sudah punya pull-up internal.</span>
+                      <span>
+                        I2C menggunakan pin <strong>custom</strong> (D5 sebagai
+                        SDA, D6 sebagai SCL), bukan default NodeMCU (D2/D1).
+                        Ini agar D1 &amp; D2 tetap bebas untuk IR dan DHT22.
+                        Modul DS3231 umumnya sudah punya pull-up internal.
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -4036,38 +4229,55 @@ export default function App() {
                 <div className="border border-yellow-200 dark:border-yellow-800/50 rounded-xl overflow-hidden">
                   <div className="bg-yellow-50 dark:bg-yellow-900/20 px-4 py-2.5 flex items-center gap-2">
                     <Zap className="w-4 h-4 text-yellow-500" />
-                    <span className="font-semibold text-sm text-yellow-700 dark:text-yellow-300">Relay 1 Channel — Kontrol Lampu UV</span>
+                    <span className="font-semibold text-sm text-yellow-700 dark:text-yellow-300">
+                      Relay 1 Channel — Kontrol Lampu UV
+                    </span>
                   </div>
                   <div className="p-4">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                          <th className="text-left pb-2 font-semibold">Pin Relay</th>
-                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
-                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                          <th className="text-left pb-2 font-semibold">
+                            Pin Relay
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            NodeMCU ESP8266 v3
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            Keterangan
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="text-gray-700 dark:text-gray-300">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">VCC</td>
                           <td className="py-1.5 font-mono text-red-500">5V</td>
-                          <td className="py-1.5">Dari pin 5V Wemos</td>
+                          <td className="py-1.5">Dari pin VU (5V USB)</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">GND</td>
-                          <td className="py-1.5 font-mono text-gray-500">GND</td>
+                          <td className="py-1.5 font-mono text-gray-500">
+                            GND
+                          </td>
                           <td className="py-1.5">Ground</td>
                         </tr>
                         <tr>
                           <td className="py-1.5 font-mono font-bold">IN</td>
-                          <td className="py-1.5 font-mono text-blue-500 font-bold">D7 (GPIO13)</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">
+                            D7 (GPIO13)
+                          </td>
                           <td className="py-1.5">Sinyal kontrol</td>
                         </tr>
                       </tbody>
                     </table>
                     <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg p-2">
                       <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span><strong>Active LOW</strong>: IN=LOW → relay ON (lampu menyala), IN=HIGH → relay OFF. Jadwal otomatis: <strong>18:00 ON</strong> — <strong>06:00 OFF</strong> (dikontrol DS3231).</span>
+                      <span>
+                        <strong>Active LOW</strong>: IN=LOW → relay ON (lampu
+                        menyala), IN=HIGH → relay OFF. Jadwal otomatis:{" "}
+                        <strong>18:00 ON</strong> — <strong>06:00 OFF</strong>{" "}
+                        (dikontrol DS3231).
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -4076,38 +4286,64 @@ export default function App() {
                 <div className="border border-green-200 dark:border-green-800/50 rounded-xl overflow-hidden">
                   <div className="bg-green-50 dark:bg-green-900/20 px-4 py-2.5 flex items-center gap-2">
                     <Battery className="w-4 h-4 text-green-500" />
-                    <span className="font-semibold text-sm text-green-700 dark:text-green-300">Pembagi Tegangan — Monitor Baterai</span>
+                    <span className="font-semibold text-sm text-green-700 dark:text-green-300">
+                      Pembagi Tegangan — Monitor Baterai
+                    </span>
                   </div>
                   <div className="p-4">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                          <th className="text-left pb-2 font-semibold">Komponen</th>
-                          <th className="text-left pb-2 font-semibold">Wemos D1 Mini</th>
-                          <th className="text-left pb-2 font-semibold">Keterangan</th>
+                          <th className="text-left pb-2 font-semibold">
+                            Komponen
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            NodeMCU ESP8266 v3
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            Keterangan
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="text-gray-700 dark:text-gray-300">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
-                          <td className="py-1.5 font-mono font-bold">V+ Baterai</td>
+                          <td className="py-1.5 font-mono font-bold">
+                            V+ Baterai
+                          </td>
                           <td className="py-1.5 font-mono">→ R1 (100kΩ) →</td>
                           <td className="py-1.5">Resistor atas</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
-                          <td className="py-1.5 font-mono font-bold">Titik tengah</td>
-                          <td className="py-1.5 font-mono text-blue-500 font-bold">A0</td>
+                          <td className="py-1.5 font-mono font-bold">
+                            Titik tengah
+                          </td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">
+                            A0
+                          </td>
                           <td className="py-1.5">Masuk ke ADC</td>
                         </tr>
                         <tr>
-                          <td className="py-1.5 font-mono font-bold">R2 (33kΩ)</td>
-                          <td className="py-1.5 font-mono text-gray-500">ke GND</td>
+                          <td className="py-1.5 font-mono font-bold">
+                            R2 (33kΩ)
+                          </td>
+                          <td className="py-1.5 font-mono text-gray-500">
+                            ke GND
+                          </td>
                           <td className="py-1.5">Resistor bawah</td>
                         </tr>
                       </tbody>
                     </table>
                     <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>A0 Wemos hanya baca <strong>0–1V</strong>. Pembagi tegangan R1=100kΩ &amp; R2=33kΩ menurunkan 4.2V baterai → ~1.04V. Formula kode: <code className="font-mono bg-green-100 dark:bg-green-900/30 px-1 rounded">raw × (4.2 / 1023)</code></span>
+                      <span>
+                        A0 NodeMCU v3 membaca <strong>0–3.3V</strong> (sudah
+                        ada pembagi internal di board). Pembagi tegangan
+                        eksternal R1=100kΩ &amp; R2=33kΩ menurunkan 4.2V baterai
+                        → ~1.04V (dalam jangkauan aman). Formula kode:{" "}
+                        <code className="font-mono bg-green-100 dark:bg-green-900/30 px-1 rounded">
+                          raw × (4.2 / 1023)
+                        </code>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -4116,27 +4352,57 @@ export default function App() {
                 <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                   <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-2.5 flex items-center gap-2">
                     <Cpu className="w-4 h-4 text-gray-500" />
-                    <span className="font-semibold text-sm text-gray-700 dark:text-gray-300">Ringkasan Pin Wemos D1 Mini</span>
+                    <span className="font-semibold text-sm text-gray-700 dark:text-gray-300">
+                      Ringkasan Pin NodeMCU ESP8266 v3
+                    </span>
                   </div>
                   <div className="p-4">
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {[
-                        { pin: "D1", func: "Sensor IR (OUT)", color: "text-purple-600 dark:text-purple-400" },
-                        { pin: "D2", func: "DHT22 (DATA)", color: "text-orange-600 dark:text-orange-400" },
-                        { pin: "D5", func: "DS3231 (SDA)", color: "text-cyan-600 dark:text-cyan-400" },
-                        { pin: "D6", func: "DS3231 (SCL)", color: "text-cyan-600 dark:text-cyan-400" },
-                        { pin: "D7", func: "Relay (IN)", color: "text-yellow-600 dark:text-yellow-400" },
-                        { pin: "A0", func: "Baterai (ADC)", color: "text-green-600 dark:text-green-400" },
+                        {
+                          pin: "D1",
+                          func: "Sensor IR (OUT)",
+                          color: "text-purple-600 dark:text-purple-400",
+                        },
+                        {
+                          pin: "D2",
+                          func: "DHT22 (DATA)",
+                          color: "text-orange-600 dark:text-orange-400",
+                        },
+                        {
+                          pin: "D5",
+                          func: "DS3231 (SDA)",
+                          color: "text-cyan-600 dark:text-cyan-400",
+                        },
+                        {
+                          pin: "D6",
+                          func: "DS3231 (SCL)",
+                          color: "text-cyan-600 dark:text-cyan-400",
+                        },
+                        {
+                          pin: "D7",
+                          func: "Relay (IN)",
+                          color: "text-yellow-600 dark:text-yellow-400",
+                        },
+                        {
+                          pin: "A0",
+                          func: "Baterai (ADC)",
+                          color: "text-green-600 dark:text-green-400",
+                        },
                       ].map((item) => (
-                        <div key={item.pin} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg px-3 py-2">
-                          <span className="font-mono font-bold text-blue-600 dark:text-blue-400 w-7 shrink-0">{item.pin}</span>
+                        <div
+                          key={item.pin}
+                          className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg px-3 py-2"
+                        >
+                          <span className="font-mono font-bold text-blue-600 dark:text-blue-400 w-7 shrink-0">
+                            {item.pin}
+                          </span>
                           <span className={item.color}>{item.func}</span>
                         </div>
                       ))}
                     </div>
                   </div>
                 </div>
-
               </div>
 
               {/* Footer */}
