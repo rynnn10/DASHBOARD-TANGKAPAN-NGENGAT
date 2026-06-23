@@ -689,6 +689,21 @@ export default function App() {
     updateServiceWorker,
   } = useRegisterSW();
 
+  // Tangkap event beforeinstallprompt untuk tombol install PWA custom
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [installDismissed, setInstallDismissed] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => { e.preventDefault(); setInstallPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === "accepted") setInstallPrompt(null);
+  };
+
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isProfileOpen, setProfileOpen] = useState(false);
@@ -2357,6 +2372,30 @@ export default function App() {
           >
             Perbarui sekarang
           </button>
+        </div>
+      )}
+      {/* Banner install PWA — muncul saat browser mendukung dan belum terinstall */}
+      {installPrompt && !installDismissed && !needRefresh && (
+        <div className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-between gap-2 bg-teal-700 text-white text-sm px-4 py-2.5 shadow-lg anim-slide-down">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bug className="w-4 h-4 shrink-0" />
+            <span className="font-medium truncate">Pasang sebagai aplikasi</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleInstall}
+              className="bg-white text-teal-700 font-semibold text-xs px-3 py-1 rounded-full hover:bg-teal-50 transition-colors"
+            >
+              Pasang
+            </button>
+            <button
+              onClick={() => setInstallDismissed(true)}
+              className="text-white/70 hover:text-white text-lg leading-none"
+              aria-label="Tutup"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
       {/* Decorative Blur Backgrounds */}

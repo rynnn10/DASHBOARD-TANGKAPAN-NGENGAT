@@ -21,16 +21,21 @@ export default defineConfig(({mode}) => {
           short_name: 'Ngengat Dash',
           description: 'Dashboard interaktif real-time untuk memantau data tangkapan ngengat.',
           theme_color: '#10b981',
+          background_color: '#f0fdf4',
+          display: 'standalone',
+          orientation: 'portrait',
           icons: [
             {
               src: '192x192.png',
               sizes: '192x192',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any'
             },
             {
               src: '512x512.png',
               sizes: '512x512',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any maskable'
             }
           ]
         }
