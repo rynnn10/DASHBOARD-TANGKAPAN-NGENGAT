@@ -4358,26 +4358,50 @@ export default function App() {
                     </table>
                     <div className="mt-2 flex items-start gap-1.5 text-[11px] text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/10 rounded-lg p-2">
                       <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         <p>
                           <strong>SQW ada di baris bawah modul</strong>{" "}
                           (urutan kiri→kanan: 32K,{" "}
                           <strong className="text-violet-600">SQW</strong>,
                           SCL, SDA, VCC, GND).
                         </p>
-                        <p>
-                          Pasang resistor <strong>10kΩ–15kΩ</strong> (12kΩ
-                          aman) sebagai <em>pull-up</em>:
-                        </p>
-                        <code className="block bg-violet-100 dark:bg-violet-900/30 rounded px-2 py-1 font-mono text-[10px] leading-relaxed whitespace-pre">
-{"3.3V ──[12kΩ]──┬── SQW (DS3231 baris bawah)"}
-{"\n               └── RST (NodeMCU)"}
+                        <p className="font-semibold">Rangkaian pull-up:</p>
+                        <code className="block bg-violet-100 dark:bg-violet-900/30 rounded px-2 py-1.5 font-mono text-[10px] leading-loose whitespace-pre">
+{"NodeMCU 3.3V ──[12kΩ]──┬── NodeMCU RST"}
+{"\n                        └── DS3231 SQW"}
                         </code>
                         <p>
-                          Resistor ini menjaga RST tetap HIGH. Saat alarm
-                          DS3231 aktif → SQW LOW → RST tertarik LOW → NodeMCU
-                          reset/boot. <strong>Jangan</strong> pasang resistor
-                          ke GND karena RST akan terus LOW (NodeMCU stuck).
+                          Resistor dipasang antara pin <strong>3.3V NodeMCU</strong>{" "}
+                          dan <strong>titik temu (junction)</strong> kabel RST+SQW.
+                          Jadi: ujung pertama resistor ke 3.3V, ujung kedua
+                          bercabang ke RST dan SQW sekaligus. <em>Satu resistor,
+                          dua tujuan</em>.
+                        </p>
+                        <p className="font-semibold">Cara kerja lengkap:</p>
+                        <ol className="list-decimal list-inside space-y-1 leading-relaxed">
+                          <li>
+                            <strong>Normal (tidak ada alarm):</strong> resistor
+                            menarik RST ke 3.3V (HIGH) → NodeMCU berjalan
+                            normal. SQW dalam keadaan high-impedance (tidak menarik
+                            ke mana-mana), jadi tidak mengganggu.
+                          </li>
+                          <li>
+                            <strong>Alarm DS3231 aktif:</strong> DS3231
+                            menarik SQW ke GND (LOW) melalui transistor
+                            internal. Karena SQW terhubung ke RST, pin RST
+                            ikut tertarik LOW → NodeMCU reset/boot.
+                          </li>
+                          <li>
+                            <strong>Setelah reset:</strong> SQW kembali
+                            high-impedance, resistor menarik RST HIGH lagi
+                            → NodeMCU berjalan normal.
+                          </li>
+                        </ol>
+                        <p className="text-[10px] text-violet-600 dark:text-violet-500">
+                          Nilai 10kΩ–15kΩ semua aman. 12kΩ milikmu bekerja
+                          sempurna. <strong>Jangan</strong> pasang ujung kedua
+                          resistor ke GND — RST akan terus LOW, NodeMCU
+                          tidak bisa boot.
                         </p>
                       </div>
                     </div>
@@ -4388,8 +4412,8 @@ export default function App() {
                         SDA, D6 sebagai SCL), bukan default NodeMCU (D2/D1).
                         Ini agar D1 &amp; D2 tetap bebas untuk IR dan DHT22.
                         Modul DS3231 umumnya sudah punya pull-up internal pada
-                        SDA &amp; SCL — resistor 12kΩ di atas khusus untuk
-                        jalur SQW→RST saja.
+                        SDA &amp; SCL — resistor 12kΩ di atas <em>khusus</em> untuk
+                        jalur SQW→RST saja, bukan untuk I2C.
                       </span>
                     </div>
                   </div>
@@ -4461,6 +4485,20 @@ export default function App() {
                     </span>
                   </div>
                   <div className="p-4 space-y-3">
+                    {/* Penjelasan pin + dan - */}
+                    <div className="flex items-start gap-1.5 text-[11px] text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/10 rounded-lg p-2">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div>
+                        Pin <strong className="text-red-500">+</strong> dan{" "}
+                        <strong className="text-gray-500">−</strong> di modul
+                        ini <em>bukan</em> VCC/GND untuk daya modul — modul
+                        adalah rangkaian pasif (hanya resistor), tidak butuh
+                        daya sendiri. Pin + dan − adalah <strong>terminal
+                        input tegangan yang ingin diukur</strong> (yaitu
+                        baterai LiFePO4 kamu).
+                      </div>
+                    </div>
+
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
@@ -4472,18 +4510,18 @@ export default function App() {
                       <tbody className="text-gray-700 dark:text-gray-300">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold text-red-500">+</td>
-                          <td className="py-1.5 font-mono font-bold">V+ Baterai</td>
-                          <td className="py-1.5">Positif baterai (maks 16.5V)</td>
+                          <td className="py-1.5 font-mono font-bold text-red-600">Terminal + Baterai</td>
+                          <td className="py-1.5">Kabel merah baterai LiFePO4</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold text-gray-500">−</td>
-                          <td className="py-1.5 font-mono text-gray-500">GND</td>
-                          <td className="py-1.5">Ground (sama dgn NodeMCU)</td>
+                          <td className="py-1.5 font-mono font-bold text-gray-500">Terminal − Baterai = GND NodeMCU</td>
+                          <td className="py-1.5">Kabel hitam baterai, sambung juga ke GND NodeMCU</td>
                         </tr>
                         <tr>
                           <td className="py-1.5 font-mono font-bold text-blue-500">S</td>
                           <td className="py-1.5 font-mono text-blue-500 font-bold">A0 (NodeMCU)</td>
-                          <td className="py-1.5">Sinyal tegangan ke ADC</td>
+                          <td className="py-1.5">Output sinyal ke ADC</td>
                         </tr>
                       </tbody>
                     </table>
@@ -4492,17 +4530,19 @@ export default function App() {
                     <div className="flex items-start gap-1.5 text-[11px] text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <div className="space-y-1">
+                        <p className="font-semibold">Cara kerja modul:</p>
                         <p>
-                          Modul memiliki voltage divider internal{" "}
-                          <strong>R1=30kΩ / R2=7.5kΩ</strong> (rasio 0.2×):
-                          pin S = V_baterai × 0.2. A0 NodeMCU membaca
-                          0–3.3V, sehingga <strong>maks baterai aman = 16.5V</strong>.
+                          Di dalam modul ada dua resistor (R1=30kΩ, R2=7.5kΩ)
+                          yang membentuk voltage divider. Tegangan baterai
+                          dibagi 5× sebelum masuk ke pin A0 NodeMCU.
+                          Contoh: baterai 14.4V → pin S = 14.4 × 0.2 = 2.88V
+                          (aman untuk A0 yang maksimum 3.3V).
                         </p>
                         <p>
-                          Formula kode yang benar:{" "}
-                          <code className="font-mono bg-green-100 dark:bg-green-900/30 px-1 rounded">
-                            raw × (16.5 / 1023.0)
-                          </code>
+                          Formula kode: <code className="font-mono bg-green-100 dark:bg-green-900/30 px-1 rounded">
+                            V = raw × (16.5 / 1023.0) × k
+                          </code>{" "}
+                          — kode sudah dikalibrasi untuk LiFePO4 4S (12.0V=0%, 14.4V=100%).
                         </p>
                       </div>
                     </div>
@@ -4511,24 +4551,31 @@ export default function App() {
                     <div className="flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 rounded-lg p-2">
                       <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <div className="space-y-1.5">
-                        <p className="font-semibold">Cara Kalibrasi (perlu dilakukan 1×):</p>
+                        <p className="font-semibold">Kalibrasi fine-tuning (opsional, lakukan 1×):</p>
+                        <p>
+                          Serial Monitor menampilkan:{" "}
+                          <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">
+                            raw=745 → 12.01V (1%)
+                          </code>{" "}
+                          — "raw" adalah angka ADC mentah 0–1023 dari pin A0,
+                          "12.01V" adalah hasil perhitungan kode.
+                        </p>
                         <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                          <li>Ukur tegangan baterai nyata dengan multimeter → catat <strong>V_aktual</strong>.</li>
-                          <li>Buka Serial Monitor Arduino IDE, lihat nilai <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded">raw</code> yang tercetak.</li>
-                          <li>Hitung faktor koreksi:{" "}
+                          <li>Ukur tegangan baterai dengan multimeter → <strong>V_aktual</strong>.</li>
+                          <li>Buka Serial Monitor (baud 115200), lihat nilai <strong>tegangan V</strong> yang tercetak.</li>
+                          <li>Hitung:{" "}
                             <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">
-                              k = V_aktual / (raw × 16.5 / 1023)
+                              k = V_aktual / V_serial
                             </code>
                           </li>
-                          <li>Di <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded">main.cpp</code>, ubah formula menjadi:{" "}
-                            <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">
-                              raw × (16.5 / 1023.0) × k
-                            </code>
+                          <li>Ubah nilai <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">k</code> di{" "}
+                            <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded">main.cpp</code>{" "}
+                            (baris <code className="bg-amber-100 dark:bg-amber-900/30 px-0.5 rounded font-mono">const float k = 1.0f</code>).
                           </li>
                         </ol>
                         <p className="text-[10px] text-amber-600 dark:text-amber-500">
-                          Contoh: multimeter = 12.4V, raw = 753 →
-                          k = 12.4 / (753 × 0.01613) = 12.4 / 12.14 ≈ 1.021
+                          Contoh: multimeter=13.2V, Serial=12.94V →
+                          k = 13.2/12.94 ≈ 1.020. Jika selisih &lt;0.2V, k=1.0 sudah cukup.
                         </p>
                       </div>
                     </div>
