@@ -3103,7 +3103,7 @@ export default function App() {
                             key={m}
                             onClick={() => setEffectViewMode(m)}
                             className={cn(
-                              "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                              "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center whitespace-nowrap",
                               effectViewMode === m
                                 ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800"
                                 : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
