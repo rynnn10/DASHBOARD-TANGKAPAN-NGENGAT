@@ -136,7 +136,45 @@ function doPost(e) {
     }
 
     // ============================================
-    // 3. FITUR LOG, GRAFIK & NOTIFIKASI
+    // 3. JADWAL ALARM DS3231 (Global — semua device berbagi sensor yang sama)
+    // ============================================
+    if (data.action === "saveSchedule") {
+      var sJadwal = sheet.getSheetByName("Jadwal_Alarm") || sheet.insertSheet("Jadwal_Alarm");
+      if (sJadwal.getLastRow() === 0) {
+        sJadwal.appendRow(["Diperbarui", "OlehEmail", "JadwalJSON"]);
+        sJadwal.setFrozenRows(1);
+        sJadwal.getRange(1, 1, 1, 3).setFontWeight("bold");
+      }
+      // Selalu overwrite baris data (baris 2) — hanya simpan versi terbaru
+      if (sJadwal.getLastRow() < 2) {
+        sJadwal.appendRow([new Date().toLocaleString("id-ID"), data.email || "-", JSON.stringify(data.schedules || [])]);
+      } else {
+        sJadwal.getRange(2, 1).setValue(new Date().toLocaleString("id-ID"));
+        sJadwal.getRange(2, 2).setValue(data.email || "-");
+        sJadwal.getRange(2, 3).setValue(JSON.stringify(data.schedules || []));
+      }
+      return ContentService.createTextOutput(
+        JSON.stringify({ status: "success", message: "Jadwal tersimpan!" })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (data.action === "loadSchedule") {
+      var sJadwal = sheet.getSheetByName("Jadwal_Alarm");
+      if (!sJadwal || sJadwal.getLastRow() < 2) {
+        return ContentService.createTextOutput(
+          JSON.stringify({ status: "success", schedules: null })
+        ).setMimeType(ContentService.MimeType.JSON);
+      }
+      var raw = sJadwal.getRange(2, 3).getValue();
+      var parsed = [];
+      try { parsed = JSON.parse(raw); } catch(pe) { parsed = []; }
+      return ContentService.createTextOutput(
+        JSON.stringify({ status: "success", schedules: parsed })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ============================================
+    // 4. FITUR LOG, GRAFIK & NOTIFIKASI
     // ============================================
     if (data.action === "syncData" || data.action === "fetchData") {
       // JIKA INI SINKRONISASI DARI WEB -> SIMPAN KE SPREADSHEET (Terpisah per User)
@@ -403,7 +441,8 @@ function doPost(e) {
         "Status_Demo", "Status_DataAsli_",
         "Grafik_Demo", "Grafik_DataAsli_",
         "Ringkasan_Demo", "Ringkasan_DataAsli_",
-        "Lingkungan_Demo", "Lingkungan_DataAsli_"
+        "Lingkungan_Demo", "Lingkungan_DataAsli_",
+        "Jadwal_Alarm", "Log_Login"
       ];
       var usedSheets = [];
       var unusedSheets = [];
@@ -431,7 +470,8 @@ function doPost(e) {
         "Status_Demo", "Status_DataAsli_",
         "Grafik_Demo", "Grafik_DataAsli_",
         "Ringkasan_Demo", "Ringkasan_DataAsli_",
-        "Lingkungan_Demo", "Lingkungan_DataAsli_"
+        "Lingkungan_Demo", "Lingkungan_DataAsli_",
+        "Jadwal_Alarm", "Log_Login"
       ];
       var deleted = [];
       var failed = [];
@@ -482,7 +522,8 @@ function scanUnusedSheets() {
     "Status_Demo", "Status_DataAsli_",
     "Grafik_Demo", "Grafik_DataAsli_",
     "Ringkasan_Demo", "Ringkasan_DataAsli_",
-    "Lingkungan_Demo", "Lingkungan_DataAsli_"
+    "Lingkungan_Demo", "Lingkungan_DataAsli_",
+    "Jadwal_Alarm", "Log_Login"
   ];
   var unusedSheets = [];
   var usedSheets = [];

@@ -1291,6 +1291,12 @@ export default function App() {
     };
   }, []);
 
+  // Load jadwal dari database saat pertama buka
+  useEffect(() => {
+    loadSchedulesFromDB();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const applyTheme = () => {
       if (
@@ -2075,6 +2081,37 @@ export default function App() {
     if (score === 2) return "Sedang";
     if (score === 3) return "Kuat";
     return "Sangat Kuat";
+  };
+
+  const saveSchedulesToDB = async (list: typeof schedules) => {
+    if (!SCRIPT_URL || isDemoMode) return;
+    try {
+      await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "saveSchedule",
+          email: userProfile?.email || "-",
+          schedules: list,
+        }),
+      });
+    } catch {}
+  };
+
+  const loadSchedulesFromDB = async () => {
+    if (!SCRIPT_URL) return;
+    try {
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "loadSchedule" }),
+      });
+      const data = await res.json();
+      if (data.status === "success" && Array.isArray(data.schedules) && data.schedules.length > 0) {
+        setSchedules(data.schedules);
+        try { localStorage.setItem("ngengat_schedules", JSON.stringify(data.schedules)); } catch {}
+      }
+    } catch {}
   };
 
   const logLoginActivity = async (email: string, demoMode: boolean) => {
@@ -4007,18 +4044,18 @@ export default function App() {
                       setIsWiringGuideOpen(true);
                       setSettingsOpen(false);
                     }}
-                    className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                    className="w-full py-2.5 px-4 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-lg text-sm font-semibold flex items-center gap-2.5 transition-colors"
                   >
-                    <Cable className="w-4 h-4" />
-                    Panduan Wiring Modul ke NodeMCU ESP8266
+                    <Cable className="w-4 h-4 shrink-0" />
+                    <span className="flex-1 text-left">Panduan Wiring Modul ke NodeMCU ESP8266</span>
                   </button>
                   <button
                     onClick={() => { setIsScheduleOpen(true); setSettingsOpen(false); }}
-                    className="w-full mt-2 py-2.5 bg-violet-50 hover:bg-violet-100 dark:bg-violet-900/20 dark:hover:bg-violet-900/40 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-800 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                    className="w-full mt-2 py-2.5 px-4 bg-violet-50 hover:bg-violet-100 dark:bg-violet-900/20 dark:hover:bg-violet-900/40 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-800 rounded-lg text-sm font-semibold flex items-center gap-2.5 transition-colors"
                   >
-                    <Clock className="w-4 h-4" />
-                    Jadwal Alarm DS3231
-                    <span className="ml-auto bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 text-xs px-2 py-0.5 rounded-full font-mono">
+                    <Clock className="w-4 h-4 shrink-0" />
+                    <span className="flex-1 text-left">Jadwal Alarm DS3231</span>
+                    <span className="bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 text-xs px-2 py-0.5 rounded-full font-mono shrink-0">
                       {schedules.filter(s => s.enabled).length}/{schedules.length}
                     </span>
                   </button>
@@ -4700,7 +4737,11 @@ export default function App() {
                 {!editingSched && (
                   <div className="px-5 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 shrink-0 rounded-b-2xl space-y-2">
                     <button
-                      onClick={() => { publishSchedules(schedules); setIsScheduleOpen(false); }}
+                      onClick={() => {
+                        publishSchedules(schedules);
+                        saveSchedulesToDB(schedules);
+                        setIsScheduleOpen(false);
+                      }}
                       disabled={isDemoMode}
                       className={cn(
                         "w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors",
