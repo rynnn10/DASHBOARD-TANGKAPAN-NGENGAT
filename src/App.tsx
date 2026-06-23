@@ -2926,6 +2926,7 @@ export default function App() {
                   <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                     {
                       <select
+                        aria-label="Pilih rentang waktu grafik"
                         value={timeDuration}
                         onChange={(e) => setTimeDuration(e.target.value)}
                         className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
@@ -3020,8 +3021,8 @@ export default function App() {
                           stroke="#374151"
                           vertical={false}
                         />
-                        <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} />
-                        <YAxis stroke="#9ca3af" fontSize={12} />
+                        <XAxis dataKey="time" stroke="#6b7280" fontSize={12} />
+                        <YAxis stroke="#6b7280" fontSize={12} />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1f2937",
@@ -3068,6 +3069,7 @@ export default function App() {
                   </div>
                   <div className="flex flex-col gap-2 w-full sm:w-auto">
                     <select
+                      aria-label="Pilih rentang waktu perbandingan"
                       value={effectTimeDuration}
                       onChange={(e) => setEffectTimeDuration(e.target.value)}
                       className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
@@ -3191,8 +3193,8 @@ export default function App() {
                           stroke="#374151"
                           vertical={false}
                         />
-                        <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                        <YAxis stroke="#9ca3af" fontSize={12} />
+                        <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
+                        <YAxis stroke="#6b7280" fontSize={12} />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1f2937",
@@ -3233,6 +3235,7 @@ export default function App() {
                 </h3>
                 <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                   <select
+                    aria-label="Pilih rentang waktu grafik suhu"
                     value={dhtTimeDuration}
                     onChange={(e) => setDhtTimeDuration(e.target.value)}
                     className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
@@ -3333,13 +3336,13 @@ export default function App() {
                           />
                           <XAxis
                             dataKey="time"
-                            stroke="#9ca3af"
+                            stroke="#6b7280"
                             fontSize={10}
                             tick={{ fontSize: 10 }}
                             interval="preserveStartEnd"
                           />
                           <YAxis
-                            stroke="#9ca3af"
+                            stroke="#6b7280"
                             fontSize={11}
                             domain={["auto", "auto"]}
                             tickFormatter={(v) => `${v}°`}
@@ -3414,13 +3417,13 @@ export default function App() {
                           />
                           <XAxis
                             dataKey="time"
-                            stroke="#9ca3af"
+                            stroke="#6b7280"
                             fontSize={10}
                             tick={{ fontSize: 10 }}
                             interval="preserveStartEnd"
                           />
                           <YAxis
-                            stroke="#9ca3af"
+                            stroke="#6b7280"
                             fontSize={11}
                             domain={[0, 100]}
                             tickFormatter={(v) => `${v}%`}
@@ -3479,6 +3482,7 @@ export default function App() {
                   </h3>
                   <div className="flex gap-2 items-center">
                     <button
+                      aria-label="Unduh database Excel"
                       onClick={handleDownloadExcel}
                       className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/40 dark:hover:bg-emerald-900/60 transition-colors text-sm font-semibold"
                       title="Unduh Database Lengkap (Excel)"
@@ -3487,6 +3491,7 @@ export default function App() {
                       <span className="hidden sm:inline">Unduh Excel</span>
                     </button>
                     <button
+                      aria-label="Reset semua log deteksi"
                       onClick={() => {
                         setLogResetScope("dashboard");
                         setIsLogResetModalOpen(true);
@@ -3498,6 +3503,7 @@ export default function App() {
                       <span className="hidden sm:inline">Reset Log</span>
                     </button>
                     <button
+                      aria-label="Simpan ke Google Sheet"
                       onClick={syncToGoogleSheet}
                       disabled={isSyncingSheet}
                       className="px-3 py-1.5 flex items-center gap-1.5 rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200 dark:text-blue-300 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 transition-colors text-sm font-semibold disabled:opacity-50"
@@ -3524,6 +3530,7 @@ export default function App() {
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 mb-4 bg-gray-50 dark:bg-gray-800/50 p-2 sm:p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                   <select
+                    aria-label="Filter sumber data log"
                     value={filterSource}
                     onChange={(e) => setFilterSource(e.target.value)}
                     className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2 outline-none"
@@ -3651,6 +3658,7 @@ export default function App() {
                     </span>
                     <div className="flex gap-1 shrink-0">
                       <button
+                        aria-label="Halaman sebelumnya"
                         onClick={() =>
                           setLogCurrentPage((p) => Math.max(1, p - 1))
                         }
@@ -3664,6 +3672,7 @@ export default function App() {
                         {logCurrentPage} / {totalLogPages}
                       </div>
                       <button
+                        aria-label="Halaman berikutnya"
                         onClick={() =>
                           setLogCurrentPage((p) =>
                             Math.min(totalLogPages, p + 1),
@@ -3893,6 +3902,11 @@ export default function App() {
                           { retain: true, qos: 1 },
                         );
                       }}
+                      aria-label={
+                        bufferBatteryEnabled
+                          ? "Nonaktifkan buffer baterai"
+                          : "Aktifkan buffer baterai"
+                      }
                       className={cn(
                         "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none",
                         bufferBatteryEnabled
@@ -4692,6 +4706,7 @@ export default function App() {
                           )}>
                           <div className="flex items-center justify-between mb-2">
                             <button onClick={() => toggleS(s.id)}
+                              aria-label={s.enabled ? `Nonaktifkan jadwal ${s.label}` : `Aktifkan jadwal ${s.label}`}
                               className={cn(
                                 "w-9 h-5 rounded-full relative transition-colors",
                                 s.enabled ? "bg-violet-500" : "bg-gray-300 dark:bg-gray-600"
@@ -4704,10 +4719,12 @@ export default function App() {
                             <span className="flex-1 ml-2 text-sm font-semibold text-gray-800 dark:text-white">{s.label}</span>
                             <div className="flex gap-1">
                               <button onClick={() => startEdit(s)}
+                                aria-label={`Edit jadwal ${s.label}`}
                                 className="p-1.5 text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors">
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
                               <button onClick={() => deleteS(s.id)}
+                                aria-label={`Hapus jadwal ${s.label}`}
                                 className="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                                 <X className="w-3.5 h-3.5" />
                               </button>
@@ -5573,10 +5590,11 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="edit-temp-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Satuan Suhu Default
                       </label>
                       <select
+                        id="edit-temp-unit"
                         value={editTemperatureUnit}
                         onChange={(e) =>
                           setEditTemperatureUnit(e.target.value as "C" | "F")
@@ -5589,10 +5607,11 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="edit-volt-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Satuan Tegangan Default
                       </label>
                       <select
+                        id="edit-volt-unit"
                         value={editVoltageUnit}
                         onChange={(e) =>
                           setEditVoltageUnit(e.target.value as "V" | "mV")
