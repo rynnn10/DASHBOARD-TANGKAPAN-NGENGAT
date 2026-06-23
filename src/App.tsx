@@ -1112,6 +1112,31 @@ export default function App() {
     A: isDemoMode ? true : false,
     B: isDemoMode ? true : false,
   });
+  // Track jumlah tangkapan sebelumnya untuk deteksi perubahan → notifikasi
+  const prevCatchRef = React.useRef({ A: 0, B: 0 });
+  const showCatchNotif = React.useCallback(
+    (node: string, newCount: number, prevCount: number) => {
+      if (Notification.permission !== 'granted' || isDemoMode) return;
+      const diff = newCount - prevCount;
+      if (diff <= 0) return;
+      navigator.serviceWorker?.ready.then(reg => {
+        reg.showNotification('Ngengat Baru Terdeteksi!', {
+          body: `Node ${node}: +${diff} ngengat (total ${newCount})`,
+          icon: './192x192.png',
+          badge: './192x192.png',
+          tag: `ngengat-catch-${node}`,
+          renotify: true,
+        } as NotificationOptions);
+      }).catch(() => {
+        // Fallback: Notification API langsung
+        new Notification('Ngengat Baru!', {
+          body: `Node ${node}: +${diff} ngengat`,
+          icon: './192x192.png',
+        });
+      });
+    },
+    [isDemoMode],
+  );
 
   // HEARTBEAT TIMERS — Node dianggap offline jika 30 detik tidak ada data
   const heartbeatRef = React.useRef<{ A: number; B: number }>({
@@ -1182,11 +1207,12 @@ export default function App() {
           }
 
           if (nodeFromPayload === "A") {
-            setNodeA((prev) => ({
-              ...prev,
-              uv365: prev.uv365 + 1,
-              online: true,
-            }));
+            setNodeA((prev) => {
+              const newCount = prev.uv365 + 1;
+              showCatchNotif("A", newCount, prevCatchRef.current.A);
+              prevCatchRef.current.A = newCount;
+              return { ...prev, uv365: newCount, online: true };
+            });
             setLogs((prevLogs) =>
               [
                 {
@@ -1201,11 +1227,12 @@ export default function App() {
               ].slice(0, 100),
             );
           } else {
-            setNodeB((prev) => ({
-              ...prev,
-              uv395: prev.uv395 + 1,
-              online: true,
-            }));
+            setNodeB((prev) => {
+              const newCount = prev.uv395 + 1;
+              showCatchNotif("B", newCount, prevCatchRef.current.B);
+              prevCatchRef.current.B = newCount;
+              return { ...prev, uv395: newCount, online: true };
+            });
             setLogs((prevLogs) =>
               [
                 {
@@ -1477,6 +1504,39 @@ export default function App() {
   }, [nodeA.uv365, nodeB.uv395, notifPermission, isDemoMode, sendConfigToSW]);
 
   // 1. TAMBAHKAN INI: Fungsi Fetch Data awal dari Google Sheet
+  const [isDhtLoading, setIsDhtLoading] = useState(false);
+
+  const fetchLingkunganData = React.useCallback(async () => {
+    if (isDemoMode || !userProfile || !SCRIPT_URL) return;
+    setIsDhtLoading(true);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "fetchData",
+          email: userProfile.email,
+          isDemoMode: false,
+        }),
+      });
+      const result = await response.json();
+      if (result.status === "success" && result.data) {
+        if (result.data.lingkunganHistory) {
+          setDhtHistoryAll(result.data.lingkunganHistory);
+        }
+        if (result.data.nodeA) setNodeA(result.data.nodeA);
+        if (result.data.nodeB) setNodeB(result.data.nodeB);
+        if (result.data.logs) setLogs(result.data.logs);
+        if (result.data.chartData && result.data.chartData.length > 0) setChartData(result.data.chartData);
+        if (result.data.effectChartData) setEffectChartData(result.data.effectChartData);
+      }
+    } catch (e) {
+      console.error("Gagal menarik data lingkungan:", e);
+    } finally {
+      setIsDhtLoading(false);
+    }
+  }, [userProfile, isDemoMode]);
+
   useEffect(() => {
     // Jika mode demo atau belum login, hentikan
     if (isDemoMode || !userProfile || !SCRIPT_URL) return;
@@ -1495,21 +1555,13 @@ export default function App() {
         });
         const result = await response.json();
         if (result.status === "success" && result.data) {
-          // Update state dengan data dari Google Sheet
           if (result.data.nodeA) setNodeA(result.data.nodeA);
           if (result.data.nodeB) setNodeB(result.data.nodeB);
           if (result.data.logs) setLogs(result.data.logs);
-          // Grafik tersimpan dari Sheet (akan disempurnakan ulang oleh efek dari logs nyata)
-          if (result.data.chartData && result.data.chartData.length > 0) {
-            setChartData(result.data.chartData);
-          }
-          if (result.data.effectChartData) {
-            setEffectChartData(result.data.effectChartData);
-          }
-          if (
-            result.data.lingkunganHistory &&
-            result.data.lingkunganHistory.length > 0
-          ) {
+          if (result.data.chartData && result.data.chartData.length > 0) setChartData(result.data.chartData);
+          if (result.data.effectChartData) setEffectChartData(result.data.effectChartData);
+          // Selalu set lingkunganHistory (termasuk array kosong) agar counter akurat
+          if (Array.isArray(result.data.lingkunganHistory)) {
             setDhtHistoryAll(result.data.lingkunganHistory);
           }
         }
@@ -2460,7 +2512,7 @@ export default function App() {
       {/* Popup konfirmasi keluar — muncul saat tombol back ditekan di PWA Android */}
       {showExitConfirm && (
         <div
-          className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm anim-fade-in"
+          className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm anim-fade-in"
           onClick={() => setShowExitConfirm(false)}
         >
           <div
@@ -2486,7 +2538,14 @@ export default function App() {
                 Batal
               </button>
               <button
-                onClick={() => { setShowExitConfirm(false); window.history.go(-2); }}
+                onClick={() => {
+                  setShowExitConfirm(false);
+                  window.close();
+                  // Fallback jika window.close() tidak menutup (beberapa browser PWA)
+                  setTimeout(() => {
+                    window.history.go(-window.history.length);
+                  }, 300);
+                }}
                 className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
               >
                 Keluar
@@ -3389,8 +3448,27 @@ export default function App() {
                 <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                   <Wind className="w-5 h-5 text-cyan-500" />
                   Grafik Suhu &amp; Kelembaban
+                  {!isDemoMode && (
+                    <span className="text-[10px] font-normal text-gray-400 dark:text-gray-500 ml-1">
+                      {dhtHistoryAll.length > 0
+                        ? `${dhtHistoryAll.length + dhtHistory.length} titik data`
+                        : dhtHistory.length > 0
+                        ? `${dhtHistory.length} titik (sesi ini)`
+                        : "belum ada data"}
+                    </span>
+                  )}
                 </h3>
-                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
+                  {!isDemoMode && (
+                    <button
+                      onClick={fetchLingkunganData}
+                      disabled={isDhtLoading}
+                      title="Muat ulang data dari Google Sheet"
+                      className="p-1.5 rounded-lg text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors disabled:opacity-40"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isDhtLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
                   <select
                     aria-label="Pilih rentang waktu grafik suhu"
                     value={dhtTimeDuration}
@@ -3453,10 +3531,12 @@ export default function App() {
                 <div className="relative z-10 flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
                   <Droplets className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
                   <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">
-                    Menunggu data sensor DHT22
+                    {isDemoMode ? "Menunggu data sensor DHT22" : "Belum ada data suhu/kelembaban tersimpan"}
                   </p>
                   <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
-                    Data akan muncul setelah NodeMCU terhubung.
+                    {isDemoMode
+                      ? "Data akan muncul setelah NodeMCU terhubung."
+                      : "Klik ↻ untuk muat ulang, atau pastikan NodeMCU sudah pernah mengirim data."}
                   </p>
                 </div>
               ) : (
