@@ -36,6 +36,7 @@ import {
   Zap,
   Cable,
   Info,
+  Lock,
 } from "lucide-react";
 import type { MqttClient } from "mqtt";
 import {
@@ -851,6 +852,7 @@ export default function App() {
   const [loginMode, setLoginMode] = useState<"login" | "register">("login");
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [pendingRealMode, setPendingRealMode] = useState(false);
 
   const [userProfile, setUserProfile] = useState<{
     displayName: string;
@@ -876,6 +878,15 @@ export default function App() {
     }, 1200); // Simulate network latency
     return () => clearTimeout(timer);
   }, [isDemoMode, userProfile]);
+
+  // Proteksi startup: jika entah bagaimana masuk ke Mode Asli tanpa login, kembalikan ke demo
+  useEffect(() => {
+    if (!isDemoMode && !userProfile) {
+      setIsDemoMode(true);
+      localStorage.setItem("isDemoMode", "true");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Tutup modal login setelah animasi sukses — profil sudah disimpan sebelumnya
   useEffect(() => {
@@ -2194,9 +2205,15 @@ export default function App() {
         } catch {
           // localStorage bisa diblokir di mode privat atau browser dengan privacy ketat
         }
+        // Jika login dipicu oleh switch ke Mode Asli, terapkan sekarang
+        if (pendingRealMode) {
+          setIsDemoMode(false);
+          localStorage.setItem("isDemoMode", "false");
+          setPendingRealMode(false);
+        }
         setLoginSuccess(true);
         // Kirim log aktivitas login secara async (tidak blokir UX)
-        logLoginActivity(loginEmail, isDemoMode);
+        logLoginActivity(loginEmail, pendingRealMode ? false : isDemoMode);
       } else {
         setLoginError(result.message || "Email atau password salah.");
       }
@@ -3815,14 +3832,27 @@ export default function App() {
                   <div
                     className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-1.5 border border-emerald-200 dark:border-emerald-800 cursor-pointer w-full"
                     onClick={() => {
-                      const newVal = !isDemoMode;
-                      setIsDemoMode(newVal);
-                      localStorage.setItem("isDemoMode", String(newVal));
-
-                      // Logout otomatis saat berpindah mode
-                      setUserProfile(null);
-                      localStorage.removeItem("userProfile");
-                      setSheetSettingsOpen(false); // Opsional tutup modal settings
+                      if (isDemoMode) {
+                        // Beralih ke Data Asli
+                        if (userProfile) {
+                          // Sudah login — langsung beralih
+                          setIsDemoMode(false);
+                          localStorage.setItem("isDemoMode", "false");
+                          setSettingsOpen(false);
+                        } else {
+                          // Belum login — tampilkan popup login dulu
+                          setPendingRealMode(true);
+                          setLoginMode("login");
+                          setLoginModalOpen(true);
+                          setSettingsOpen(false);
+                        }
+                      } else {
+                        // Beralih ke Data Demo — logout otomatis
+                        setIsDemoMode(true);
+                        localStorage.setItem("isDemoMode", "true");
+                        setUserProfile(null);
+                        localStorage.removeItem("userProfile");
+                      }
                     }}
                   >
                     <div
@@ -5301,6 +5331,7 @@ export default function App() {
               onClick={(e) => {
                 if (!loginSuccess && e.target === e.currentTarget) {
                   setLoginModalOpen(false);
+                  setPendingRealMode(false);
                 }
               }}
             >
@@ -5308,19 +5339,25 @@ export default function App() {
                 className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden anim-scale-in"
               >
                 <div className="p-6 sm:p-8">
-                  <div className="flex justify-between items-center mb-8">
+                  <div className="flex justify-between items-center mb-4">
                     <h3 className="font-extrabold text-2xl text-gray-900 dark:text-white tracking-tight">
                       {loginMode === "login" ? "Masuk" : "Daftar Akun"}
                     </h3>
                     <button
                       aria-label="Tutup"
-                      onClick={() => setLoginModalOpen(false)}
+                      onClick={() => { setLoginModalOpen(false); setPendingRealMode(false); }}
                       className="text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
                       disabled={loginSuccess}
                     >
                       <X className="w-5 h-5" />
                     </button>
                   </div>
+                  {pendingRealMode && !loginSuccess && (
+                    <div className="mb-5 px-3.5 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl flex items-center gap-2.5 text-xs text-amber-700 dark:text-amber-400">
+                      <Lock className="w-4 h-4 shrink-0" />
+                      <span>Login atau daftar akun diperlukan untuk menggunakan <strong>Data Asli</strong> dari sensor ESP8266.</span>
+                    </div>
+                  )}
                   {loginSuccess ? (
                     <div className="py-12 flex flex-col items-center justify-center anim-scale-in">
                       <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4">
@@ -5743,6 +5780,11 @@ export default function App() {
                     onClick={() => {
                       setUserProfile(null);
                       localStorage.removeItem("userProfile");
+                      // Kembali ke Mode Demo otomatis saat logout di Mode Asli
+                      if (!isDemoMode) {
+                        setIsDemoMode(true);
+                        localStorage.setItem("isDemoMode", "true");
+                      }
                       setIsLogoutConfirmOpen(false);
                       setProfileOpen(false);
                     }}
