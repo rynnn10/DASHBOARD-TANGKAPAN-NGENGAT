@@ -3052,83 +3052,88 @@ export default function App() {
               <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 md:p-5 shadow-sm relative overflow-hidden group">
                 <Microscope className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 text-gray-200/70 dark:text-gray-900/10 rotate-[-15deg] transition-transform duration-[2s] group-hover:scale-110 group-hover:-translate-x-[40%] z-0 pointer-events-none" />
                 <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                  <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                    <Bug className="w-5 h-5 text-emerald-500" />
-                    Perbandingan Efektivitas
-                  </h3>
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
-                    {
-                      <select
-                        value={effectTimeDuration}
-                        onChange={(e) => setEffectTimeDuration(e.target.value)}
-                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
-                      >
-                        {effectTimeRange === "hari" && (
-                          <>
-                            <option value="hari_ini">Hari Ini</option>
-                            <option value="3_hari">3 Hari Terakhir</option>
-                            <option value="7_hari">7 Hari Terakhir</option>
-                          </>
-                        )}
-                        {effectTimeRange === "minggu" && (
-                          <>
-                            <option value="minggu_ini">Minggu Ini</option>
-                            <option value="4_minggu">4 Minggu Terakhir</option>
-                            <option value="7_minggu">7 Minggu Terakhir</option>
-                          </>
-                        )}
-                        {effectTimeRange === "bulan" && (
-                          <>
-                            <option value="bulan_ini">Bulan Ini</option>
-                            <option value="3_bulan">3 Bulan Terakhir</option>
-                            <option value="6_bulan">6 Bulan Terakhir</option>
-                          </>
-                        )}
-                        {effectTimeRange === "tahun" && (
-                          <>
-                            <option value="tahun_ini">Tahun Ini</option>
-                            <option value="2_tahun">1-2 Tahun Terakhir</option>
-                            <option value="5_tahun">5 Tahun Terakhir</option>
-                          </>
-                        )}
-                      </select>
-                    }
-                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                      {(["total", "rata-rata"] as const).map((m) => (
-                        <button
-                          key={m}
-                          onClick={() => setEffectViewMode(m)}
-                          className={cn(
-                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
-                            effectViewMode === m
-                              ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800"
-                              : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
-                          )}
-                        >
-                          {m}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 w-full sm:w-auto">
-                      {(["hari", "minggu", "bulan", "tahun"] as const).map(
-                        (t) => (
+                  <div>
+                    <h3 className="text-base md:text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                      <Bug className="w-5 h-5 text-emerald-500" />
+                      Perbandingan Efektivitas
+                    </h3>
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 pl-7">
+                      UV 365nm (Node A) vs UV 395nm (Node B)
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 w-full sm:w-auto">
+                    <select
+                      value={effectTimeDuration}
+                      onChange={(e) => setEffectTimeDuration(e.target.value)}
+                      className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                    >
+                      {effectTimeRange === "hari" && (
+                        <>
+                          <option value="hari_ini">Hari Ini</option>
+                          <option value="3_hari">3 Hari Terakhir</option>
+                          <option value="7_hari">7 Hari Terakhir</option>
+                        </>
+                      )}
+                      {effectTimeRange === "minggu" && (
+                        <>
+                          <option value="minggu_ini">Minggu Ini</option>
+                          <option value="4_minggu">4 Minggu Terakhir</option>
+                          <option value="7_minggu">7 Minggu Terakhir</option>
+                        </>
+                      )}
+                      {effectTimeRange === "bulan" && (
+                        <>
+                          <option value="bulan_ini">Bulan Ini</option>
+                          <option value="3_bulan">3 Bulan Terakhir</option>
+                          <option value="6_bulan">6 Bulan Terakhir</option>
+                        </>
+                      )}
+                      {effectTimeRange === "tahun" && (
+                        <>
+                          <option value="tahun_ini">Tahun Ini</option>
+                          <option value="2_tahun">1-2 Tahun Terakhir</option>
+                          <option value="5_tahun">5 Tahun Terakhir</option>
+                        </>
+                      )}
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 flex-1">
+                        {(["total", "rata-rata"] as const).map((m) => (
                           <button
-                            key={t}
-                            onClick={() => {
-                              setEffectTimeRange(t);
-                              setEffectTimeDuration(t + "_ini");
-                            }}
+                            key={m}
+                            onClick={() => setEffectViewMode(m)}
                             className={cn(
                               "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
-                              effectTimeRange === t
-                                ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm"
+                              effectViewMode === m
+                                ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800"
                                 : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
                             )}
                           >
-                            {t}
+                            {m}
                           </button>
-                        ),
-                      )}
+                        ))}
+                      </div>
+                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 flex-1">
+                        {(["hari", "minggu", "bulan", "tahun"] as const).map(
+                          (t) => (
+                            <button
+                              key={t}
+                              onClick={() => {
+                                setEffectTimeRange(t);
+                                setEffectTimeDuration(t + "_ini");
+                              }}
+                              className={cn(
+                                "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                                effectTimeRange === t
+                                  ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm"
+                                  : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
+                              )}
+                            >
+                              {t}
+                            </button>
+                          ),
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
