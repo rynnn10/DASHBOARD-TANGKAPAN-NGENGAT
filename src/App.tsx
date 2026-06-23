@@ -37,6 +37,7 @@ import {
   Cable,
   Info,
   Lock,
+  RefreshCw,
 } from "lucide-react";
 import type { MqttClient } from "mqtt";
 import {
@@ -3539,7 +3540,7 @@ export default function App() {
                         className="p-2 rounded-lg text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 transition-colors"
                         title="Sinkronisasi Log Demo"
                       >
-                        <RotateCcw className="w-4 h-4" />
+                        <RefreshCw className="w-4 h-4" />
                       </button>
                     )}
                   </div>
@@ -3706,20 +3707,21 @@ export default function App() {
               </div>
 
               {isDemoMode && (
-                <div className="bg-emerald-50/50 dark:bg-emerald-900/20 rounded-2xl p-4 md:p-5 border border-emerald-100 dark:border-emerald-800/30">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Microscope className="text-emerald-600 dark:text-emerald-400 w-6 h-6" />
-                    <h3 className="text-base md:text-lg font-bold text-emerald-900 dark:text-emerald-400">
-                      Modul Evaluasi Akurasi
+                <div className="lg:col-span-3 bg-emerald-50/50 dark:bg-emerald-900/20 rounded-2xl p-4 md:p-5 border border-emerald-100 dark:border-emerald-800/30">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Microscope className="text-emerald-600 dark:text-emerald-400 w-5 h-5 shrink-0" />
+                    <h3 className="text-sm font-bold text-emerald-900 dark:text-emerald-400">
+                      Modul Evaluasi Akurasi Sensor
                     </h3>
                   </div>
                   <p className="text-xs text-emerald-700 dark:text-emerald-300/70 mb-4 leading-relaxed">
                     Masukkan jumlah tangkapan fisik (manual) di toples pagi hari
                     untuk menghitung error rate pembacaan sensor IR.
                   </p>
-                  <div className="space-y-4">
+                  {/* Input + button: 1 kolom mobile → 2 kolom sm → 3 kolom lg (sejajar) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
                     <div>
-                      <label htmlFor="eval-365" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="eval-365" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Tangkapan Fisik 365 nm (Node A)
                       </label>
                       <input
@@ -3732,7 +3734,7 @@ export default function App() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="eval-395" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="eval-395" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Tangkapan Fisik 395 nm (Node B)
                       </label>
                       <input
@@ -3746,53 +3748,50 @@ export default function App() {
                     </div>
                     <button
                       onClick={calculateAccuracy}
-                      className="w-full text-white bg-emerald-600 hover:bg-emerald-700 focus:ring-4 focus:ring-emerald-300 font-medium rounded-lg text-sm px-5 py-3 transition text-center shadow-md"
+                      className="sm:col-span-2 lg:col-span-1 w-full text-white bg-emerald-600 hover:bg-emerald-700 focus:ring-4 focus:ring-emerald-300 font-medium rounded-lg text-sm px-4 py-2.5 transition text-center shadow-sm whitespace-nowrap"
                     >
-                      Kalkulasi Akurasi Sensor
+                      Kalkulasi Akurasi
                     </button>
-
-                    {evaluation && (
-                      <div className="mt-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 transition-all">
-                        <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-3">
-                          Hasil Evaluasi Error Rate:
-                        </h4>
-                        <div className="flex justify-between items-center text-sm mb-2 pb-2 border-b border-gray-100 dark:border-gray-700">
-                          <span className="text-gray-600 dark:text-gray-300">
-                            Sensor 365 nm:
-                          </span>
-                          <span
-                            className={cn(
-                              "font-bold text-gray-800 dark:text-white",
-                              evaluation.err365 <= 5
-                                ? "text-green-500"
-                                : evaluation.err365 <= 10
-                                  ? "text-yellow-500"
-                                  : "text-red-500",
-                            )}
-                          >
-                            {evaluation.err365.toFixed(2)}%
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-600 dark:text-gray-300">
-                            Sensor 395 nm:
-                          </span>
-                          <span
-                            className={cn(
-                              "font-bold text-gray-800 dark:text-white",
-                              evaluation.err395 <= 5
-                                ? "text-green-500"
-                                : evaluation.err395 <= 10
-                                  ? "text-yellow-500"
-                                  : "text-red-500",
-                            )}
-                          >
-                            {evaluation.err395.toFixed(2)}%
-                          </span>
-                        </div>
-                      </div>
-                    )}
                   </div>
+
+                  {evaluation && (
+                    <div className="mt-4 grid grid-cols-2 gap-3 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">
+                          Error Rate 365 nm
+                        </p>
+                        <p
+                          className={cn(
+                            "text-2xl font-bold",
+                            evaluation.err365 <= 5
+                              ? "text-green-500"
+                              : evaluation.err365 <= 10
+                                ? "text-yellow-500"
+                                : "text-red-500",
+                          )}
+                        >
+                          {evaluation.err365.toFixed(2)}%
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">
+                          Error Rate 395 nm
+                        </p>
+                        <p
+                          className={cn(
+                            "text-2xl font-bold",
+                            evaluation.err395 <= 5
+                              ? "text-green-500"
+                              : evaluation.err395 <= 10
+                                ? "text-yellow-500"
+                                : "text-red-500",
+                          )}
+                        >
+                          {evaluation.err395.toFixed(2)}%
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
