@@ -4,49 +4,58 @@ function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
 
-    // TAB USER SENTRAL: Jangan dipisahkan per user agar sistem Login bekerja
-    var usersMode = data.isDemoMode ? "_Demo" : "_DataAsli";
-    var sUsers =
-      sheet.getSheetByName("Users" + usersMode) ||
-      sheet.insertSheet("Users" + usersMode);
+    // TAB USER SENTRAL — satu sheet universal, tidak bergantung mode
+    // Bug lama: Users_Demo vs Users_DataAsli menyebabkan login gagal saat pindah mode
+    var sUsers = sheet.getSheetByName("Users") || sheet.insertSheet("Users");
 
-    // IDENTITAS USER: Bersihkan email (ganti @ dan . jadi _, misalnya budi_gmail_com) untuk dipakai sebagai nama Sheet
+    // IDENTITAS USER: Bersihkan email untuk nama sheet data
     var userIdentifier = "";
     if (data.email) {
       userIdentifier = "_" + data.email.replace(/[@.]/g, "_");
     }
 
-    // TAB DATA (Logs, Status, Grafik): Dipisahkan khusus per akun jika menggunakan Mode Asli
+    // TAB DATA (Logs, Status, Grafik): tetap dipisah per akun di Mode Asli
     var modeSuffix = data.isDemoMode ? "_Demo" : "_DataAsli" + userIdentifier;
+
+    // Helper: normalisasi email (lowercase + trim) agar perbandingan tidak case-sensitive
+    var emailNorm = String(data.email || "").toLowerCase().trim();
+
+    // Helper: ambil semua baris dari sebuah sheet (skip header)
+    function getSheetRows(s) {
+      if (!s || s.getLastRow() < 2) return [];
+      return s.getDataRange().getValues().slice(1);
+    }
+
+    // Sheet lama (backward compat) — cek juga saat login/register agar akun lama tetap bisa masuk
+    var sUsersDemo  = sheet.getSheetByName("Users_Demo");
+    var sUsersAsli  = sheet.getSheetByName("Users_DataAsli");
+    var legacySheets = [sUsersDemo, sUsersAsli].filter(function(s) { return !!s; });
 
     // ============================================
     // 1. FITUR AKUN (Register & Login & Update)
     // ============================================
     if (sUsers.getLastRow() === 0) {
-      sUsers.appendRow([
-        "Email",
-        "Password",
-        "Name",
-        "PhotoURL",
-        "CoverURL",
-        "Dibuat Sejak",
-      ]);
+      sUsers.appendRow(["Email", "Password", "Name", "PhotoURL", "CoverURL", "Dibuat Sejak"]);
+      sUsers.setFrozenRows(1);
+      sUsers.getRange(1, 1, 1, 6).setFontWeight("bold");
     }
 
     if (data.action === "register") {
-      var dataUsers = sUsers.getDataRange().getValues();
-      for (var i = 1; i < dataUsers.length; i++) {
-        if (dataUsers[i][0] === data.email) {
-          return ContentService.createTextOutput(
-            JSON.stringify({
-              status: "error",
-              message: "Email sudah terdaftar!",
-            }),
-          ).setMimeType(ContentService.MimeType.JSON);
+      // Cek duplikat di sheet utama DAN sheet lama
+      var allSheetsToCheck = [sUsers].concat(legacySheets);
+      for (var sc = 0; sc < allSheetsToCheck.length; sc++) {
+        var rows = getSheetRows(allSheetsToCheck[sc]);
+        for (var i = 0; i < rows.length; i++) {
+          if (String(rows[i][0]).toLowerCase().trim() === emailNorm) {
+            return ContentService.createTextOutput(
+              JSON.stringify({ status: "error", message: "Email sudah terdaftar!" })
+            ).setMimeType(ContentService.MimeType.JSON);
+          }
         }
       }
+      // Simpan ke sheet utama dengan email ternormalisasi
       sUsers.appendRow([
-        data.email,
+        emailNorm,
         data.password,
         data.name || "",
         data.photoURL || "",
@@ -57,55 +66,53 @@ function doPost(e) {
         JSON.stringify({
           status: "success",
           message: "Pendaftaran berhasil!",
-          data: {
-            email: data.email,
-            name: data.name,
-            photoURL: data.photoURL,
-            coverUrl: data.coverUrl,
-          },
-        }),
+          data: { email: emailNorm, name: data.name, photoURL: data.photoURL, coverUrl: data.coverUrl },
+        })
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (data.action === "login") {
-      var dataUsers = sUsers.getDataRange().getValues();
-      for (var i = 1; i < dataUsers.length; i++) {
-        if (
-          dataUsers[i][0] === data.email &&
-          dataUsers[i][1] === data.password
-        ) {
-          return ContentService.createTextOutput(
-            JSON.stringify({
-              status: "success",
-              message: "Login berhasil!",
-              data: {
-                email: dataUsers[i][0],
-                name: dataUsers[i][2],
-                photoURL: dataUsers[i][3],
-                coverUrl: dataUsers[i][4],
-              },
-            }),
-          ).setMimeType(ContentService.MimeType.JSON);
+      var pwd = String(data.password || "");
+      // Cari di sheet utama dulu, lalu sheet lama (backward compat)
+      var loginSheetsToCheck = [sUsers].concat(legacySheets);
+      for (var sc = 0; sc < loginSheetsToCheck.length; sc++) {
+        var rows = getSheetRows(loginSheetsToCheck[sc]);
+        for (var i = 0; i < rows.length; i++) {
+          if (
+            String(rows[i][0]).toLowerCase().trim() === emailNorm &&
+            String(rows[i][1]) === pwd
+          ) {
+            return ContentService.createTextOutput(
+              JSON.stringify({
+                status: "success",
+                message: "Login berhasil!",
+                data: { email: rows[i][0], name: rows[i][2], photoURL: rows[i][3], coverUrl: rows[i][4] },
+              })
+            ).setMimeType(ContentService.MimeType.JSON);
+          }
         }
       }
       return ContentService.createTextOutput(
-        JSON.stringify({
-          status: "error",
-          message: "Email/password salah atau belum terdaftar!",
-        }),
+        JSON.stringify({ status: "error", message: "Email/password salah atau belum terdaftar!" })
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (data.action === "updateProfile") {
-      var dataUsers = sUsers.getDataRange().getValues();
-      for (var i = 1; i < dataUsers.length; i++) {
-        if (dataUsers[i][0] === data.email) {
-          sUsers.getRange(i + 1, 3).setValue(data.displayName);
-          sUsers.getRange(i + 1, 4).setValue(data.photoURL);
-          sUsers.getRange(i + 1, 5).setValue(data.coverUrl);
-          return ContentService.createTextOutput(
-            JSON.stringify({ status: "success", message: "Profile updated!" }),
-          ).setMimeType(ContentService.MimeType.JSON);
+      // Cari user di sheet utama DAN sheet lama
+      var updateSheetsToCheck = [sUsers].concat(legacySheets);
+      for (var sc = 0; sc < updateSheetsToCheck.length; sc++) {
+        var targetSheet = updateSheetsToCheck[sc];
+        if (!targetSheet || targetSheet.getLastRow() < 2) continue;
+        var updateRows = targetSheet.getDataRange().getValues();
+        for (var i = 1; i < updateRows.length; i++) {
+          if (String(updateRows[i][0]).toLowerCase().trim() === emailNorm) {
+            targetSheet.getRange(i + 1, 3).setValue(data.displayName);
+            targetSheet.getRange(i + 1, 4).setValue(data.photoURL);
+            targetSheet.getRange(i + 1, 5).setValue(data.coverUrl);
+            return ContentService.createTextOutput(
+              JSON.stringify({ status: "success", message: "Profile updated!" })
+            ).setMimeType(ContentService.MimeType.JSON);
+          }
         }
       }
     }

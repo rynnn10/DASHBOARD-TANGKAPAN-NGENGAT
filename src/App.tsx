@@ -2179,7 +2179,7 @@ export default function App() {
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           action: loginMode,
-          email: loginEmail,
+          email: loginEmail.trim().toLowerCase(),
           password: loginPassword,
           name: loginMode === "register" ? loginName : undefined,
           photoURL: loginMode === "register" ? loginPhoto : undefined,
@@ -2189,11 +2189,12 @@ export default function App() {
       });
       const result = await response.json();
       if (result.status === "success") {
+        const normalizedEmail = loginEmail.trim().toLowerCase();
         const profile = {
           displayName: result.data
-            ? result.data.name || loginEmail.split("@")[0]
-            : loginEmail.split("@")[0],
-          email: loginEmail,
+            ? result.data.name || normalizedEmail.split("@")[0]
+            : normalizedEmail.split("@")[0],
+          email: normalizedEmail,
           photoURL: result.data ? result.data.photoURL || "" : "",
           coverUrl: result.data ? result.data.coverUrl || "" : "",
         };
