@@ -1,6 +1,6 @@
 // ============================================================
 // Backend Google Apps Script — Dashboard Tangkapan Ngengat
-// Terakhir diperbarui: Rabu, 24 Juni 2026 22:45 WIB
+// Terakhir diperbarui: Rabu, 24 Juni 2026 21:12 WIB
 // ============================================================
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet();

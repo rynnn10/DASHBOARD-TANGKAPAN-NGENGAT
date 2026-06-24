@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Rabu, 24 Juni 2026 22:45 WIB
+// Terakhir diperbarui: Rabu, 24 Juni 2026 21:12 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -839,7 +839,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Rabu, 24 Juni 2026 22:45 WIB";
+const LAST_UPDATED = "Rabu, 24 Juni 2026 21:12 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -855,11 +855,20 @@ export default function App() {
 
   // ── PWA back button (Android) → popup konfirmasi keluar ─────────────────
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const exitingRef = React.useRef(false); // true saat user benar-benar mau keluar
   useEffect(() => {
-    const isPwa = window.matchMedia('(display-mode: standalone)').matches;
+    // Deteksi PWA lebih luas: standalone / fullscreen / minimal-ui / iOS / TWA
+    const isPwa =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches ||
+      window.matchMedia('(display-mode: minimal-ui)').matches ||
+      (navigator as any).standalone === true ||
+      document.referrer.startsWith('android-app://');
     if (!isPwa) return;
     window.history.pushState({ pwa: true }, '');
     const handler = () => {
+      // Jika user sudah menekan "Keluar", jangan tahan — biarkan navigasi keluar
+      if (exitingRef.current) return;
       setShowExitConfirm(true);
       window.history.pushState({ pwa: true }, '');
     };
@@ -2827,11 +2836,15 @@ export default function App() {
               <button
                 onClick={() => {
                   setShowExitConfirm(false);
-                  window.close();
-                  // Fallback jika window.close() tidak menutup (beberapa browser PWA)
+                  // Tandai sedang keluar agar guard popstate tidak menahan lagi
+                  exitingRef.current = true;
+                  // Mundur melewati 2 state penjaga (saat mount + saat popup) →
+                  // back sistem Android yang menutup PWA (web app tak boleh self-close)
+                  window.history.go(-2);
+                  // Best-effort: sebagian konteks PWA masih mengizinkan close
                   setTimeout(() => {
-                    window.history.go(-window.history.length);
-                  }, 300);
+                    try { window.close(); } catch (e) {}
+                  }, 120);
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
               >
