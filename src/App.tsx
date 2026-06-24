@@ -1037,6 +1037,7 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [nameExistsPrompt, setNameExistsPrompt] = useState<string | null>(null);
   const [loginName, setLoginName] = useState("");
   const [loginPhoto, setLoginPhoto] = useState("");
   const [loginCover, setLoginCover] = useState("");
@@ -1525,6 +1526,7 @@ export default function App() {
               effectChartData: dataRef.current.effectChartData,
               lingkunganData: dataRef.current.dhtHistory,
               email: userProfile.email,
+              name: userProfile.displayName,
               isDemoMode: isDemoMode,
             }),
           });
@@ -1644,6 +1646,7 @@ export default function App() {
           effectChartData: dataRef.current.effectChartData,
           lingkunganData: dataRef.current.dhtHistory,
           email: userProfile.email,
+          name: userProfile.displayName,
           isDemoMode: false,
         }),
       }).catch((e) => console.error("Buffer auto-sync failed:", e));
@@ -1673,6 +1676,7 @@ export default function App() {
           body: JSON.stringify({
             action: "fetchData",
             email: userProfile.email,
+            name: userProfile.displayName,
             isDemoMode: false,
           }),
         });
@@ -2167,6 +2171,7 @@ export default function App() {
         lingkunganData: dataRef.current.dhtHistory,
         isDemoMode: isDemoMode,
         email: userProfile?.email,
+        name: userProfile?.displayName,
       };
 
       const response = await fetch(SCRIPT_URL, {
@@ -2272,6 +2277,7 @@ export default function App() {
             chartData: [],
             effectChartData: { NodeA: 0, NodeB: 0 },
             email: userProfile.email,
+            name: userProfile.displayName,
             isDemoMode: false,
           }),
         });
@@ -2300,6 +2306,7 @@ export default function App() {
             chartData: [],
             effectChartData,
             email: userProfile.email,
+            name: userProfile.displayName,
             isDemoMode: false,
           }),
         });
@@ -2408,8 +2415,9 @@ export default function App() {
     }
   };
 
-  const submitAuth = async () => {
+  const submitAuth = async (force = false) => {
     setLoginError("");
+    setNameExistsPrompt(null);
     if (!loginEmail || !loginPassword) {
       setLoginError("Mohon lengkapi email dan password!");
       return;
@@ -2438,6 +2446,7 @@ export default function App() {
           name: loginMode === "register" ? loginName : undefined,
           photoURL: loginMode === "register" ? loginPhoto : undefined,
           coverUrl: loginMode === "register" ? loginCover : undefined,
+          forceRegister: force,
           // Saat auth dipicu peralihan ke Mode Asli, isDemoMode state masih true
           // (baru di-set false setelah sukses). Kirim false agar Tipe = Asli.
           isDemoMode: pendingRealMode ? false : isDemoMode,
@@ -2471,6 +2480,11 @@ export default function App() {
         setLoginSuccess(true);
         // Kirim log aktivitas login secara async (tidak blokir UX)
         logLoginActivity(loginEmail, pendingRealMode ? false : isDemoMode);
+      } else if (result.status === "name_exists") {
+        // Nama sudah dipakai — tampilkan konfirmasi (login / tetap daftar)
+        setNameExistsPrompt(
+          result.message || "Nama tersebut sudah dipakai. Mungkin Anda ingin login?",
+        );
       } else {
         setLoginError(result.message || "Email atau password salah.");
       }
@@ -6031,6 +6045,34 @@ export default function App() {
                         <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2 text-red-600 dark:text-red-400 text-sm">
                           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                           <span>{loginError}</span>
+                        </div>
+                      )}
+                      {nameExistsPrompt && (
+                        <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-700 dark:text-amber-300 text-sm">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                            <span>{nameExistsPrompt}</span>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNameExistsPrompt(null);
+                                setLoginError("");
+                                setLoginMode("login");
+                              }}
+                              className="flex-1 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
+                            >
+                              Login saja
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => submitAuth(true)}
+                              className="flex-1 px-3 py-2 rounded-lg bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 text-xs font-semibold hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                            >
+                              Tetap daftar
+                            </button>
+                          </div>
                         </div>
                       )}
                       <form
