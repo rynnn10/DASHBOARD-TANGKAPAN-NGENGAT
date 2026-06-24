@@ -2438,7 +2438,9 @@ export default function App() {
           name: loginMode === "register" ? loginName : undefined,
           photoURL: loginMode === "register" ? loginPhoto : undefined,
           coverUrl: loginMode === "register" ? loginCover : undefined,
-          isDemoMode: isDemoMode,
+          // Saat auth dipicu peralihan ke Mode Asli, isDemoMode state masih true
+          // (baru di-set false setelah sukses). Kirim false agar Tipe = Asli.
+          isDemoMode: pendingRealMode ? false : isDemoMode,
         }),
       });
       const result = await response.json();
@@ -3266,21 +3268,21 @@ export default function App() {
                     <PieChart className="w-5 h-5 text-emerald-500" />
                     Fluktuasi Waktu Kedatangan
                   </h3>
-                  <div className="flex flex-col gap-1.5 items-end">
+                  <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-auto sm:items-end">
                     {timeRange === "kustom" ? (
-                      <div className="flex gap-1.5 items-center">
+                      <div className="flex gap-1.5 items-center w-full sm:w-auto">
                         <input type="date" value={catchCustomStart} onChange={e => setCatchCustomStart(e.target.value)}
-                          className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                         <span className="text-gray-400 text-xs flex-shrink-0">–</span>
                         <input type="date" value={catchCustomEnd} onChange={e => setCatchCustomEnd(e.target.value)}
-                          className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                       </div>
                     ) : (
                       <select
                         aria-label="Pilih rentang waktu grafik"
                         value={timeDuration}
                         onChange={(e) => setTimeDuration(e.target.value)}
-                        className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
                       >
                         {timeRange === "hari" && (
                           <>
@@ -3312,8 +3314,8 @@ export default function App() {
                         )}
                       </select>
                     )}
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <div className="flex items-center w-full sm:w-auto bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                           (t) => (
                             <button
@@ -3415,21 +3417,21 @@ export default function App() {
                       UV 365nm (Node A) vs UV 395nm (Node B)
                     </p>
                   </div>
-                  <div className="flex flex-col gap-1.5 items-end">
+                  <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-auto sm:items-end">
                     {effectTimeRange === "kustom" ? (
-                      <div className="flex gap-1.5 items-center">
+                      <div className="flex gap-1.5 items-center w-full sm:w-auto">
                         <input type="date" value={effectCustomStart} onChange={e => setEffectCustomStart(e.target.value)}
-                          className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                         <span className="text-gray-400 text-xs flex-shrink-0">–</span>
                         <input type="date" value={effectCustomEnd} onChange={e => setEffectCustomEnd(e.target.value)}
-                          className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                       </div>
                     ) : (
                       <select
                         aria-label="Pilih rentang waktu perbandingan"
                         value={effectTimeDuration}
                         onChange={(e) => setEffectTimeDuration(e.target.value)}
-                        className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
                       >
                         {effectTimeRange === "hari" && (
                           <>
@@ -3461,8 +3463,8 @@ export default function App() {
                         )}
                       </select>
                     )}
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <div className="flex items-center flex-1 sm:flex-initial bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["total", "rata-rata"] as const).map((m) => (
                           <button
                             key={m}
@@ -3478,7 +3480,7 @@ export default function App() {
                           </button>
                         ))}
                       </div>
-                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center flex-1 sm:flex-initial bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                           (t) => (
                             <button
@@ -3591,21 +3593,21 @@ export default function App() {
                   <Wind className="w-5 h-5 text-cyan-500" />
                   Grafik Suhu &amp; Kelembaban
                 </h3>
-                <div className="flex flex-col gap-1.5 items-end">
+                <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-auto sm:items-end">
                   {dhtTimeRange === "kustom" ? (
-                    <div className="flex gap-1.5 items-center">
+                    <div className="flex gap-1.5 items-center w-full sm:w-auto">
                       <input type="date" value={dhtCustomStart} onChange={e => setDhtCustomStart(e.target.value)}
-                        className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
+                        className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
                       <span className="text-gray-400 text-xs flex-shrink-0">–</span>
                       <input type="date" value={dhtCustomEnd} onChange={e => setDhtCustomEnd(e.target.value)}
-                        className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
+                        className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
                     </div>
                   ) : (
                     <select
                       aria-label="Pilih rentang waktu grafik suhu"
                       value={dhtTimeDuration}
                       onChange={(e) => setDhtTimeDuration(e.target.value)}
-                      className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
+                      className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
                     >
                       {dhtTimeRange === "hari" && (
                         <>
@@ -3637,8 +3639,8 @@ export default function App() {
                       )}
                     </select>
                   )}
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="flex items-center w-full sm:w-auto bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                       {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                         (t) => (
                           <button
