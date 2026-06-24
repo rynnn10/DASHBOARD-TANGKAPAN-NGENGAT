@@ -1,3 +1,7 @@
+// ============================================================
+// Dashboard Tangkapan Ngengat — Aplikasi utama (React)
+// Terakhir diperbarui: Rabu, 24 Juni 2026 14:26 WIB
+// ============================================================
 import React, { useState, useEffect } from "react";
 import {
   Leaf,
@@ -807,6 +811,9 @@ const ImageUpload = ({
   );
 };
 
+// Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
+const LAST_UPDATED = "Rabu, 24 Juni 2026 14:26 WIB";
+
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
   const {
@@ -1044,6 +1051,9 @@ export default function App() {
   const [otpError, setOtpError] = useState("");
   const [otpInfo, setOtpInfo] = useState("");
   const [otpForce, setOtpForce] = useState(false);
+  // Kustomisasi warna bar baterai (bisa diedit di Mode Demo)
+  const [demoBatteryColorA, setDemoBatteryColorA] = useState("#22c55e");
+  const [demoBatteryColorB, setDemoBatteryColorB] = useState("#eab308");
   const [loginName, setLoginName] = useState("");
   const [loginPhoto, setLoginPhoto] = useState("");
   const [loginCover, setLoginCover] = useState("");
@@ -1077,14 +1087,13 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [isDemoMode, userProfile]);
 
-  // Proteksi startup: jika entah bagaimana masuk ke Mode Asli tanpa login, kembalikan ke demo
+  // GATE LOGIN: kedua mode (Demo & Asli) kini wajib login sebelum akses dashboard.
+  // Jika belum login, paksa buka modal login (non-dismissible saat gate).
   useEffect(() => {
-    if (!isDemoMode && !userProfile) {
-      setIsDemoMode(true);
-      localStorage.setItem("isDemoMode", "true");
+    if (!userProfile && !loginSuccess) {
+      setLoginModalOpen(true);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [userProfile, loginSuccess]);
 
   // Tutup modal login setelah animasi sukses — profil sudah disimpan sebelumnya
   useEffect(() => {
@@ -2943,7 +2952,7 @@ export default function App() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        <main className={cn("flex-1 flex flex-col h-screen overflow-hidden", !userProfile && "blur-sm pointer-events-none select-none")}>
           <header className="bg-white dark:bg-gray-800 h-auto min-h-[4rem] py-3 lg:py-0 lg:h-16 flex flex-col lg:flex-row lg:items-center justify-between px-4 lg:px-8 border-b border-gray-200 dark:border-gray-700 shrink-0 z-10 shadow-sm transition-colors duration-300 gap-3 lg:gap-0">
             <div className="flex items-center justify-between w-full lg:w-auto">
               <div className="flex items-center gap-3 sm:gap-4">
@@ -3188,10 +3197,32 @@ export default function App() {
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div
-                        className="bg-green-500 h-2 rounded-full transition-all duration-700"
-                        style={{ width: `${nodeA.battery}%` }}
+                        className="h-2 rounded-full transition-all duration-700"
+                        style={{ width: `${nodeA.battery}%`, backgroundColor: demoBatteryColorA }}
                       ></div>
                     </div>
+                    {isDemoMode && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <input
+                          type="range" min={0} max={100} value={nodeA.battery}
+                          onChange={(e) => setNodeA((p) => ({ ...p, battery: Number(e.target.value) }))}
+                          className="flex-1 h-1.5 cursor-pointer" style={{ accentColor: demoBatteryColorA }}
+                          aria-label="Atur persen baterai Node A"
+                        />
+                        <input
+                          type="number" min={0} max={100} value={nodeA.battery}
+                          onChange={(e) => setNodeA((p) => ({ ...p, battery: Math.max(0, Math.min(100, Number(e.target.value))) }))}
+                          className="w-12 text-xs text-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-0.5 outline-none"
+                          aria-label="Persen baterai Node A"
+                        />
+                        <input
+                          type="color" value={demoBatteryColorA}
+                          onChange={(e) => setDemoBatteryColorA(e.target.value)}
+                          className="w-7 h-7 rounded cursor-pointer bg-transparent border border-gray-300 dark:border-gray-600"
+                          aria-label="Warna bar baterai Node A"
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-500 dark:text-gray-400">
@@ -3250,10 +3281,32 @@ export default function App() {
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div
-                        className="bg-yellow-500 h-2 rounded-full transition-all duration-700"
-                        style={{ width: `${nodeB.battery}%` }}
+                        className="h-2 rounded-full transition-all duration-700"
+                        style={{ width: `${nodeB.battery}%`, backgroundColor: demoBatteryColorB }}
                       ></div>
                     </div>
+                    {isDemoMode && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <input
+                          type="range" min={0} max={100} value={nodeB.battery}
+                          onChange={(e) => setNodeB((p) => ({ ...p, battery: Number(e.target.value) }))}
+                          className="flex-1 h-1.5 cursor-pointer" style={{ accentColor: demoBatteryColorB }}
+                          aria-label="Atur persen baterai Node B"
+                        />
+                        <input
+                          type="number" min={0} max={100} value={nodeB.battery}
+                          onChange={(e) => setNodeB((p) => ({ ...p, battery: Math.max(0, Math.min(100, Number(e.target.value))) }))}
+                          className="w-12 text-xs text-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-0.5 outline-none"
+                          aria-label="Persen baterai Node B"
+                        />
+                        <input
+                          type="color" value={demoBatteryColorB}
+                          onChange={(e) => setDemoBatteryColorB(e.target.value)}
+                          className="w-7 h-7 rounded cursor-pointer bg-transparent border border-gray-300 dark:border-gray-600"
+                          aria-label="Warna bar baterai Node B"
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-500 dark:text-gray-400">
@@ -3327,6 +3380,28 @@ export default function App() {
                     </span>
                   </div>
                 </div>
+                {isDemoMode && (
+                  <div className="relative z-10 flex items-center gap-2 mt-3 flex-wrap">
+                    <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                      <Thermometer className="w-3 h-3 text-red-400" />
+                      <input
+                        type="number" step="0.1" value={dhtData.A ? dhtData.A.temp : 0}
+                        onChange={(e) => setDhtData((prev) => ({ ...prev, A: { temp: Number(e.target.value), humidity: prev.A?.humidity ?? 0, timestamp: Date.now() } }))}
+                        className="w-16 text-xs text-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-0.5 outline-none"
+                        aria-label="Suhu Node A (demo)"
+                      />°C
+                    </label>
+                    <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                      <Droplets className="w-3 h-3 text-blue-400" />
+                      <input
+                        type="number" min={0} max={100} value={dhtData.A ? dhtData.A.humidity : 0}
+                        onChange={(e) => setDhtData((prev) => ({ ...prev, A: { temp: prev.A?.temp ?? 0, humidity: Math.max(0, Math.min(100, Number(e.target.value))), timestamp: Date.now() } }))}
+                        className="w-16 text-xs text-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-0.5 outline-none"
+                        aria-label="Kelembaban Node A (demo)"
+                      />%
+                    </label>
+                  </div>
+                )}
                 {dhtData.A && (
                   <p className="relative z-10 text-[10px] text-gray-400 dark:text-gray-600 mt-3">
                     Update:{" "}
@@ -3382,6 +3457,28 @@ export default function App() {
                     </span>
                   </div>
                 </div>
+                {isDemoMode && (
+                  <div className="relative z-10 flex items-center gap-2 mt-3 flex-wrap">
+                    <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                      <Thermometer className="w-3 h-3 text-red-400" />
+                      <input
+                        type="number" step="0.1" value={dhtData.B ? dhtData.B.temp : 0}
+                        onChange={(e) => setDhtData((prev) => ({ ...prev, B: { temp: Number(e.target.value), humidity: prev.B?.humidity ?? 0, timestamp: Date.now() } }))}
+                        className="w-16 text-xs text-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-0.5 outline-none"
+                        aria-label="Suhu Node B (demo)"
+                      />°C
+                    </label>
+                    <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                      <Droplets className="w-3 h-3 text-blue-400" />
+                      <input
+                        type="number" min={0} max={100} value={dhtData.B ? dhtData.B.humidity : 0}
+                        onChange={(e) => setDhtData((prev) => ({ ...prev, B: { temp: prev.B?.temp ?? 0, humidity: Math.max(0, Math.min(100, Number(e.target.value))), timestamp: Date.now() } }))}
+                        className="w-16 text-xs text-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-0.5 outline-none"
+                        aria-label="Kelembaban Node B (demo)"
+                      />%
+                    </label>
+                  </div>
+                )}
                 {dhtData.B && (
                   <p className="relative z-10 text-[10px] text-gray-400 dark:text-gray-600 mt-3">
                     Update:{" "}
@@ -4304,6 +4401,9 @@ export default function App() {
             <footer className="mt-8 text-center text-xs text-gray-400 dark:text-gray-500 pb-4">
               &copy; 2026 Riyan (2305125) - Politeknik LPP Yogyakarta. Sistem
               Monitoring Light Trap UPDKS.
+              <span className="block mt-1 text-[10px] text-gray-400 dark:text-gray-600">
+                Terakhir diperbarui: {LAST_UPDATED}
+              </span>
             </footer>
           </div>
         </main>
@@ -4330,6 +4430,10 @@ export default function App() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
+              <div className="px-5 py-2 bg-emerald-50/50 dark:bg-emerald-900/10 border-b border-gray-100 dark:border-gray-700/50 text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1.5 shrink-0">
+                <RefreshCw className="w-3 h-3 text-emerald-500" />
+                Terakhir diperbarui: <span className="font-semibold text-gray-700 dark:text-gray-300">{LAST_UPDATED}</span>
+              </div>
               <div className="p-5 space-y-6 overflow-y-auto flex-1">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
@@ -4338,27 +4442,17 @@ export default function App() {
                   <div
                     className="flex items-center bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-1.5 border border-emerald-200 dark:border-emerald-800 cursor-pointer w-full"
                     onClick={() => {
-                      if (isDemoMode) {
-                        // Beralih ke Data Asli
-                        if (userProfile) {
-                          // Sudah login — langsung beralih
-                          setIsDemoMode(false);
-                          localStorage.setItem("isDemoMode", "false");
-                          setSettingsOpen(false);
-                        } else {
-                          // Belum login — tampilkan popup login dulu
-                          setPendingRealMode(true);
-                          setLoginMode("login");
-                          setLoginModalOpen(true);
-                          setSettingsOpen(false);
-                        }
-                      } else {
-                        // Beralih ke Data Demo — logout otomatis
-                        setIsDemoMode(true);
-                        localStorage.setItem("isDemoMode", "true");
-                        setUserProfile(null);
-                        localStorage.removeItem("userProfile");
-                      }
+                      // Kedua mode (Demo & Asli) kini wajib login akun tipe tsb.
+                      // Beralih mode = logout & buka gate login untuk mode tujuan.
+                      const target = !isDemoMode;
+                      setIsDemoMode(target);
+                      localStorage.setItem("isDemoMode", String(target));
+                      setUserProfile(null);
+                      localStorage.removeItem("userProfile");
+                      setLoginMode("login");
+                      setPendingRealMode(false);
+                      setSettingsOpen(false);
+                      setLoginModalOpen(true);
                     }}
                   >
                     <div
@@ -6116,7 +6210,8 @@ export default function App() {
             <div
               className="fixed inset-0 bg-gray-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center anim-fade-in"
               onClick={(e) => {
-                if (!loginSuccess && e.target === e.currentTarget) {
+                // Saat gate (belum login) modal TIDAK bisa ditutup
+                if (userProfile && !loginSuccess && e.target === e.currentTarget) {
                   setLoginModalOpen(false);
                   setPendingRealMode(false);
                   setOtpStep(false);
@@ -6134,15 +6229,49 @@ export default function App() {
                     <h3 className="font-extrabold text-2xl text-gray-900 dark:text-white tracking-tight">
                       {loginMode === "login" ? "Masuk" : "Daftar Akun"}
                     </h3>
-                    <button
-                      aria-label="Tutup"
-                      onClick={() => { setLoginModalOpen(false); setPendingRealMode(false); setOtpStep(false); setOtpCode(""); setOtpError(""); setNameExistsPrompt(null); }}
-                      className="text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
-                      disabled={loginSuccess}
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
+                    {userProfile && (
+                      <button
+                        aria-label="Tutup"
+                        onClick={() => { setLoginModalOpen(false); setPendingRealMode(false); setOtpStep(false); setOtpCode(""); setOtpError(""); setNameExistsPrompt(null); }}
+                        className="text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
+                        disabled={loginSuccess}
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
+                  {!userProfile && !loginSuccess && (
+                    <div className="mb-5">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                        Pilih jenis akun untuk masuk:
+                      </p>
+                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-xl p-1 border border-gray-200 dark:border-gray-700">
+                        {([true, false] as const).map((demo) => (
+                          <button
+                            key={String(demo)}
+                            type="button"
+                            onClick={() => {
+                              setIsDemoMode(demo);
+                              localStorage.setItem("isDemoMode", String(demo));
+                              setOtpStep(false);
+                              setOtpCode("");
+                              setOtpError("");
+                              setLoginError("");
+                              setNameExistsPrompt(null);
+                            }}
+                            className={cn(
+                              "flex-1 py-2 rounded-lg text-xs font-bold transition-all",
+                              isDemoMode === demo
+                                ? "bg-white dark:bg-emerald-700 shadow-sm text-emerald-700 dark:text-white"
+                                : "text-gray-500 dark:text-gray-400",
+                            )}
+                          >
+                            {demo ? "Akun Demo" : "Akun Asli"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {pendingRealMode && !loginSuccess && (
                     <div className="mb-5 px-3.5 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl flex items-center gap-2.5 text-xs text-amber-700 dark:text-amber-400">
                       <Lock className="w-4 h-4 shrink-0" />

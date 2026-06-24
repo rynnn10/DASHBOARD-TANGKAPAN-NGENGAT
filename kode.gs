@@ -1,3 +1,7 @@
+// ============================================================
+// Backend Google Apps Script — Dashboard Tangkapan Ngengat
+// Terakhir diperbarui: Rabu, 24 Juni 2026 14:26 WIB
+// ============================================================
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -218,6 +222,36 @@ function doPost(e) {
         "RataRataLingkungan_DataAsli",
       ];
       return exact.indexOf(name) !== -1;
+    }
+
+    // Hapus SEKALI sheet lama yang tak terpakai (sheet per-email & arsip *_old_v1)
+    // HANYA setelah migrasi konsolidasi selesai. Dijaga flag agar jalan sekali.
+    function cleanupOldSheetsV2() {
+      var props;
+      try {
+        props = PropertiesService.getScriptProperties();
+      } catch (e) {
+        props = null;
+      }
+      if (!props) return;
+      if (props.getProperty("consolidated_v2_done") !== "yes") return;
+      if (props.getProperty("cleanup_old_v2_done") === "yes") return;
+      var oldAsliRe = /^(Logs|Status|Ringkasan|Grafik|grafik|Lingkungan|RataRataLingkungan|RataRata)_DataAsli_.+/;
+      var toDelete = [];
+      sheet.getSheets().forEach(function (s) {
+        var n = s.getName();
+        if (isProtectedSheet(n)) return;
+        if (oldAsliRe.test(n) || /_old_v1$/.test(n)) toDelete.push(n);
+      });
+      toDelete.forEach(function (n) {
+        var s = sheet.getSheetByName(n);
+        if (s && sheet.getSheets().length > 1) {
+          try {
+            sheet.deleteSheet(s);
+          } catch (e2) {}
+        }
+      });
+      props.setProperty("cleanup_old_v2_done", "yes");
     }
 
     // Tipe akun berdasarkan mode: Demo dan Asli adalah AKUN TERPISAH
@@ -655,8 +689,9 @@ function doPost(e) {
     // 4. FITUR LOG, GRAFIK & NOTIFIKASI
     // ============================================
     if (data.action === "syncData" || data.action === "fetchData") {
-      // Migrasi sekali dari skema per-email lama → konsolidasi (sheet lama tetap arsip)
+      // Migrasi sekali dari skema per-email lama → konsolidasi, lalu bersihkan sheet lama
       migrateConsolidatedV2();
+      cleanupOldSheetsV2();
 
       // JIKA INI SINKRONISASI DARI WEB -> SIMPAN KE SHEET KONSOLIDASI (tag per user)
       if (data.action === "syncData" && data.logs && data.logs.length > 0) {
