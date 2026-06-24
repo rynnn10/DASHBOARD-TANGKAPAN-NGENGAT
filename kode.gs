@@ -1,6 +1,6 @@
 // ============================================================
 // Backend Google Apps Script — Dashboard Tangkapan Ngengat
-// Terakhir diperbarui: Rabu, 24 Juni 2026 14:26 WIB
+// Terakhir diperbarui: Rabu, 24 Juni 2026 20:15 WIB
 // ============================================================
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -510,57 +510,69 @@ function doPost(e) {
 
     if (data.action === "login") {
       var pwd = String(data.password || "");
-      // 1. Sheet utama: cocokkan email+password DAN (Tipe sesuai mode ATAU Tipe kosong/legacy)
+      var loginEmailFound = false;
+
+      // 1. Sheet utama: dua pass — pertama cari email, lalu cek password
       var allUsers = sUsers.getDataRange().getValues();
       for (var i = 1; i < allUsers.length; i++) {
         var uEm = String(allUsers[i][0]).toLowerCase().trim();
         var uTp = String(allUsers[i][6] || "").trim();
-        if (
-          uEm === emailNorm &&
-          String(allUsers[i][1]) === pwd &&
-          (uTp === wantedTipe || uTp === "")
-        ) {
-          // Self-heal: isi Tipe baris lama yang masih kosong
-          if (uTp === "") sUsers.getRange(i + 1, 7).setValue(wantedTipe);
-          return ContentService.createTextOutput(
-            JSON.stringify({
-              status: "success",
-              message: "Login berhasil!",
-              data: {
-                email: allUsers[i][0],
-                name: allUsers[i][2],
-                photoURL: allUsers[i][3],
-                coverUrl: allUsers[i][4],
-              },
-            }),
-          ).setMimeType(ContentService.MimeType.JSON);
+        if (uEm === emailNorm && (uTp === wantedTipe || uTp === "")) {
+          loginEmailFound = true;
+          if (String(allUsers[i][1]) === pwd) {
+            // Self-heal: isi Tipe baris lama yang masih kosong
+            if (uTp === "") sUsers.getRange(i + 1, 7).setValue(wantedTipe);
+            return ContentService.createTextOutput(
+              JSON.stringify({
+                status: "success",
+                message: "Login berhasil!",
+                data: {
+                  email: allUsers[i][0],
+                  name: allUsers[i][2],
+                  photoURL: allUsers[i][3],
+                  coverUrl: allUsers[i][4],
+                },
+              }),
+            ).setMimeType(ContentService.MimeType.JSON);
+          }
         }
       }
+
       // 2. Sheet lama untuk mode ini (Users_Demo / Users_DataAsli)
       var legLoginRows = getSheetRows(legacyForMode);
       for (var i = 0; i < legLoginRows.length; i++) {
-        if (
-          String(legLoginRows[i][0]).toLowerCase().trim() === emailNorm &&
-          String(legLoginRows[i][1]) === pwd
-        ) {
-          return ContentService.createTextOutput(
-            JSON.stringify({
-              status: "success",
-              message: "Login berhasil!",
-              data: {
-                email: legLoginRows[i][0],
-                name: legLoginRows[i][2],
-                photoURL: legLoginRows[i][3],
-                coverUrl: legLoginRows[i][4],
-              },
-            }),
-          ).setMimeType(ContentService.MimeType.JSON);
+        if (String(legLoginRows[i][0]).toLowerCase().trim() === emailNorm) {
+          loginEmailFound = true;
+          if (String(legLoginRows[i][1]) === pwd) {
+            return ContentService.createTextOutput(
+              JSON.stringify({
+                status: "success",
+                message: "Login berhasil!",
+                data: {
+                  email: legLoginRows[i][0],
+                  name: legLoginRows[i][2],
+                  photoURL: legLoginRows[i][3],
+                  coverUrl: legLoginRows[i][4],
+                },
+              }),
+            ).setMimeType(ContentService.MimeType.JSON);
+          }
         }
+      }
+
+      // Pesan error spesifik: email tidak ada vs password salah
+      if (!loginEmailFound) {
+        return ContentService.createTextOutput(
+          JSON.stringify({
+            status: "error",
+            message: "Email belum terdaftar untuk mode " + (data.isDemoMode ? "Demo" : "Asli") + ". Silakan daftar akun baru.",
+          }),
+        ).setMimeType(ContentService.MimeType.JSON);
       }
       return ContentService.createTextOutput(
         JSON.stringify({
           status: "error",
-          message: "Email/password salah atau belum terdaftar!",
+          message: "Password salah. Periksa kembali password Anda.",
         }),
       ).setMimeType(ContentService.MimeType.JSON);
     }

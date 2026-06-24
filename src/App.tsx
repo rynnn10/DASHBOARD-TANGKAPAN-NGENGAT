@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Rabu, 24 Juni 2026 14:26 WIB
+// Terakhir diperbarui: Rabu, 24 Juni 2026 20:15 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -812,7 +812,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Rabu, 24 Juni 2026 14:26 WIB";
+const LAST_UPDATED = "Rabu, 24 Juni 2026 20:15 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -3692,8 +3692,8 @@ export default function App() {
                         )}
                       </select>
                     )}
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <div className="flex items-center flex-1 sm:flex-initial bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+                      <div className="flex items-center w-full sm:w-auto bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["total", "rata-rata"] as const).map((m) => (
                           <button
                             key={m}
@@ -3709,7 +3709,7 @@ export default function App() {
                           </button>
                         ))}
                       </div>
-                      <div className="flex items-center flex-1 sm:flex-initial bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center w-full sm:w-auto bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                           (t) => (
                             <button
@@ -6222,9 +6222,9 @@ export default function App() {
               }}
             >
               <div
-                className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden anim-scale-in"
+                className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl w-[95%] max-w-sm sm:max-w-md rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden anim-scale-in flex flex-col max-h-[92vh]"
               >
-                <div className="p-6 sm:p-8">
+                <div className="p-5 sm:p-7 overflow-y-auto flex-1 scrollbar-hide">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-extrabold text-2xl text-gray-900 dark:text-white tracking-tight">
                       {loginMode === "login" ? "Masuk" : "Daftar Akun"}
@@ -6406,7 +6406,7 @@ export default function App() {
                           e.preventDefault();
                           submitAuth();
                         }}
-                        className="space-y-5 max-h-[70vh] overflow-y-auto px-1 scrollbar-hide"
+                        className="space-y-5 px-1"
                       >
                         <div>
                           <label htmlFor="login-email" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
