@@ -51,6 +51,7 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  ErrorBar,
 } from "recharts";
 import { clsx } from "clsx";
 import type { ClassValue } from "clsx";
@@ -186,7 +187,8 @@ function buildChartFromLogs(
       const base = startOfDay(now);
       for (let i = 0; i < count; i++) {
         const start = base - (count - 1 - i) * DAY;
-        buckets.push({ time: `H-${count - 1 - i}`, start, end: start + DAY });
+        const d = new Date(start);
+        buckets.push({ time: `${d.getDate()} ${BULAN_NAMA[d.getMonth()]}`, start, end: start + DAY });
       }
     }
   } else if (range === "minggu") {
@@ -205,8 +207,9 @@ function buildChartFromLogs(
       const count = duration === "4_minggu" ? 4 : 7;
       for (let i = 0; i < count; i++) {
         const start = monday - (count - 1 - i) * 7 * DAY;
+        const d = new Date(start);
         buckets.push({
-          time: `Minggu ke-${count - i}`,
+          time: `${d.getDate()} ${BULAN_NAMA[d.getMonth()]}`,
           start,
           end: start + 7 * DAY,
         });
@@ -305,6 +308,10 @@ function buildDhtChartFromHistory(
   humA: number | null;
   tempB: number | null;
   humB: number | null;
+  tempA_sd: number | null;
+  humA_sd: number | null;
+  tempB_sd: number | null;
+  humB_sd: number | null;
 }[] {
   const now = new Date();
   const DAY = 86400000;
@@ -356,7 +363,8 @@ function buildDhtChartFromHistory(
       const base = startOfDay(now);
       for (let i = 0; i < count; i++) {
         const start = base - (count - 1 - i) * DAY;
-        buckets.push({ time: `H-${count - 1 - i}`, start, end: start + DAY });
+        const d = new Date(start);
+        buckets.push({ time: `${d.getDate()} ${BULAN_NAMA[d.getMonth()]}`, start, end: start + DAY });
       }
     }
   } else if (range === "minggu") {
@@ -375,8 +383,9 @@ function buildDhtChartFromHistory(
       const count = duration === "4_minggu" ? 4 : 7;
       for (let i = 0; i < count; i++) {
         const start = monday - (count - 1 - i) * 7 * DAY;
+        const d = new Date(start);
         buckets.push({
-          time: `Minggu ke-${count - i}`,
+          time: `${d.getDate()} ${BULAN_NAMA[d.getMonth()]}`,
           start,
           end: start + 7 * DAY,
         });
@@ -439,12 +448,8 @@ function buildDhtChartFromHistory(
   }
 
   const accum = buckets.map(() => ({
-    sumTempA: 0,
-    cntA: 0,
-    sumHumA: 0,
-    sumTempB: 0,
-    cntB: 0,
-    sumHumB: 0,
+    sumTempA: 0, sumSqTempA: 0, cntA: 0, sumHumA: 0, sumSqHumA: 0,
+    sumTempB: 0, sumSqTempB: 0, cntB: 0, sumHumB: 0, sumSqHumB: 0,
   }));
 
   for (const r of history || []) {
@@ -455,17 +460,24 @@ function buildDhtChartFromHistory(
       if (ts >= buckets[i].start && ts < buckets[i].end) {
         if (r.node === "A") {
           accum[i].sumTempA += r.temp;
+          accum[i].sumSqTempA += r.temp * r.temp;
           accum[i].sumHumA += r.humidity;
+          accum[i].sumSqHumA += r.humidity * r.humidity;
           accum[i].cntA++;
         } else {
           accum[i].sumTempB += r.temp;
+          accum[i].sumSqTempB += r.temp * r.temp;
           accum[i].sumHumB += r.humidity;
+          accum[i].sumSqHumB += r.humidity * r.humidity;
           accum[i].cntB++;
         }
         break;
       }
     }
   }
+
+  const sdCalc = (sum: number, sumSq: number, n: number) =>
+    n > 1 ? Number(Math.sqrt(Math.max(0, (sumSq - (sum * sum) / n) / (n - 1))).toFixed(2)) : null;
 
   return buckets.map((b, i) => ({
     time: b.time,
@@ -474,20 +486,29 @@ function buildDhtChartFromHistory(
     humA:  accum[i].cntA > 0 ? Number((accum[i].sumHumA  / accum[i].cntA).toFixed(1)) : null,
     tempB: accum[i].cntB > 0 ? Number((accum[i].sumTempB / accum[i].cntB).toFixed(1)) : null,
     humB:  accum[i].cntB > 0 ? Number((accum[i].sumHumB  / accum[i].cntB).toFixed(1)) : null,
+    tempA_sd: accum[i].cntA > 1 ? sdCalc(accum[i].sumTempA, accum[i].sumSqTempA, accum[i].cntA) : null,
+    humA_sd:  accum[i].cntA > 1 ? sdCalc(accum[i].sumHumA,  accum[i].sumSqHumA,  accum[i].cntA) : null,
+    tempB_sd: accum[i].cntB > 1 ? sdCalc(accum[i].sumTempB, accum[i].sumSqTempB, accum[i].cntB) : null,
+    humB_sd:  accum[i].cntB > 1 ? sdCalc(accum[i].sumHumB,  accum[i].sumSqHumB,  accum[i].cntB) : null,
   }));
 }
 
-// Custom tooltip untuk semua grafik — menampilkan "Hari, Tgl Bln Thn Jam:Mnt"
+// Custom tooltip untuk semua grafik — menampilkan "Hari, Tgl Bln Thn Jam:Mnt" + ±SD jika ada
 const ChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   const startMs: number | undefined = payload[0]?.payload?.startMs;
+  const visibleEntries = payload.filter((e: any) =>
+    e.value != null && !String(e.dataKey).endsWith('_sd')
+  );
   return (
-    <div className="bg-gray-900 dark:bg-gray-950 border border-gray-700 rounded-xl p-2.5 shadow-2xl text-xs min-w-[140px]">
+    <div className="bg-gray-900 dark:bg-gray-950 border border-gray-700 rounded-xl p-2.5 shadow-2xl text-xs min-w-[150px]">
       <p className="text-gray-300 font-semibold mb-1.5 pb-1.5 border-b border-gray-700">
         {startMs ? fmtBucketTs(startMs) : label}
       </p>
-      {payload.map((entry: any, i: number) => (
-        entry.value != null && (
+      {visibleEntries.map((entry: any, i: number) => {
+        const sdKey = String(entry.dataKey) + '_sd';
+        const sdVal = entry.payload?.[sdKey];
+        return (
           <p key={i} className="flex items-center justify-between gap-3 mt-1">
             <span className="flex items-center gap-1.5" style={{ color: entry.color }}>
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: entry.color }} />
@@ -495,10 +516,13 @@ const ChartTooltip = ({ active, payload, label }: any) => {
             </span>
             <span className="font-bold text-white">
               {entry.value}{entry.unit ?? ''}
+              {sdVal != null && (
+                <span className="text-gray-400 font-normal ml-1">±{sdVal}</span>
+              )}
             </span>
           </p>
-        )
-      ))}
+        );
+      })}
     </div>
   );
 };
@@ -3331,7 +3355,7 @@ export default function App() {
                           stroke="#374151"
                           vertical={false}
                         />
-                        <XAxis dataKey="time" stroke="#6b7280" fontSize={12} />
+                        <XAxis dataKey="time" stroke="#6b7280" fontSize={10} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                         <YAxis stroke="#6b7280" fontSize={12} />
                         <Tooltip content={<ChartTooltip />} cursor={false} />
                         <Legend />
@@ -3372,21 +3396,21 @@ export default function App() {
                       UV 365nm (Node A) vs UV 395nm (Node B)
                     </p>
                   </div>
-                  <div className="flex flex-col gap-2 w-full sm:w-auto">
+                  <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center justify-end">
                     {effectTimeRange === "kustom" ? (
-                      <div className="flex gap-1.5 items-center w-full sm:w-auto">
+                      <div className="flex gap-1.5 items-center">
                         <input type="date" value={effectCustomStart} onChange={e => setEffectCustomStart(e.target.value)}
-                          className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                         <span className="text-gray-400 text-xs flex-shrink-0">–</span>
                         <input type="date" value={effectCustomEnd} onChange={e => setEffectCustomEnd(e.target.value)}
-                          className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                       </div>
                     ) : (
                       <select
                         aria-label="Pilih rentang waktu perbandingan"
                         value={effectTimeDuration}
                         onChange={(e) => setEffectTimeDuration(e.target.value)}
-                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                        className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
                       >
                         {effectTimeRange === "hari" && (
                           <>
@@ -3418,44 +3442,42 @@ export default function App() {
                         )}
                       </select>
                     )}
-                    <div className="flex flex-col sm:flex-row items-stretch gap-2">
-                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
-                        {(["total", "rata-rata"] as const).map((m) => (
+                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                      {(["total", "rata-rata"] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setEffectViewMode(m)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center whitespace-nowrap",
+                            effectViewMode === m
+                              ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800"
+                              : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
+                          )}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                      {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
+                        (t) => (
                           <button
-                            key={m}
-                            onClick={() => setEffectViewMode(m)}
+                            key={t}
+                            onClick={() => {
+                              setEffectTimeRange(t);
+                              setEffectTimeDuration(t === "kustom" ? "kustom" : t + "_ini");
+                            }}
                             className={cn(
-                              "px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center whitespace-nowrap",
-                              effectViewMode === m
-                                ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shadow-sm border border-emerald-200 dark:border-emerald-800"
+                              "px-2 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
+                              effectTimeRange === t
+                                ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm"
                                 : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
                             )}
                           >
-                            {m}
+                            {t === "kustom" ? "tanggal" : t}
                           </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
-                        {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
-                          (t) => (
-                            <button
-                              key={t}
-                              onClick={() => {
-                                setEffectTimeRange(t);
-                                setEffectTimeDuration(t === "kustom" ? "kustom" : t + "_ini");
-                              }}
-                              className={cn(
-                                "px-2 py-1.5 rounded-md text-xs font-medium capitalize transition-colors flex-1 text-center",
-                                effectTimeRange === t
-                                  ? "bg-white dark:bg-gray-600 text-emerald-600 dark:text-emerald-400 shadow-sm"
-                                  : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
-                              )}
-                            >
-                              {t === "kustom" ? "tanggal" : t}
-                            </button>
-                          ),
-                        )}
-                      </div>
+                        ),
+                      )}
                     </div>
                   </div>
                 </div>
@@ -3510,14 +3532,7 @@ export default function App() {
                         />
                         <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
                         <YAxis stroke="#6b7280" fontSize={12} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#1f2937",
-                            borderColor: "#374151",
-                            color: "white",
-                          }}
-                          cursor={false}
-                        />
+                        <Tooltip content={<ChartTooltip />} cursor={false} />
                         <Legend />
                         <Bar
                           dataKey="NodeA"
@@ -3718,7 +3733,9 @@ export default function App() {
                             connectNulls
                             name="Suhu A (°C)"
                             unit="°C"
-                          />
+                          >
+                            <ErrorBar dataKey="tempA_sd" width={3} strokeWidth={1} stroke="#f97316" opacity={0.45} direction="y" />
+                          </Line>
                           <Line
                             type="monotone"
                             dataKey="tempB"
@@ -3728,7 +3745,9 @@ export default function App() {
                             connectNulls
                             name="Suhu B (°C)"
                             unit="°C"
-                          />
+                          >
+                            <ErrorBar dataKey="tempB_sd" width={3} strokeWidth={1} stroke="#f9a8d4" opacity={0.45} direction="y" />
+                          </Line>
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -3788,7 +3807,9 @@ export default function App() {
                             connectNulls
                             name="Kelembaban A (%)"
                             unit="%"
-                          />
+                          >
+                            <ErrorBar dataKey="humA_sd" width={3} strokeWidth={1} stroke="#3b82f6" opacity={0.45} direction="y" />
+                          </Line>
                           <Line
                             type="monotone"
                             dataKey="humB"
@@ -3798,7 +3819,9 @@ export default function App() {
                             connectNulls
                             name="Kelembaban B (%)"
                             unit="%"
-                          />
+                          >
+                            <ErrorBar dataKey="humB_sd" width={3} strokeWidth={1} stroke="#22d3ee" opacity={0.45} direction="y" />
+                          </Line>
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
