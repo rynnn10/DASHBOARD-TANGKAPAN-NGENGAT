@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Rabu, 24 Juni 2026 21:30 WIB
+// Terakhir diperbarui: Rabu, 25 Juni 2026 00:39 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -839,7 +839,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Rabu, 24 Juni 2026 21:30 WIB";
+const LAST_UPDATED = "Rabu, 25 Juni 2026 00:39 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -1240,6 +1240,10 @@ export default function App() {
       ? { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true }
       : { uv395: 0, online: false, battery: 0, voltage: 0, led: false },
   );
+  // Self-test hardware status (dikirim dari firmware saat boot via MQTT)
+  const [selfTestA, setSelfTestA] = useState<{ir_ok:boolean;dht_ok:boolean;rtc_ok:boolean;relay_ok:boolean;temp:number;hum:number;rtcTime:string} | null>(null);
+  const [selfTestB, setSelfTestB] = useState<{ir_ok:boolean;dht_ok:boolean;rtc_ok:boolean;relay_ok:boolean;temp:number;hum:number;rtcTime:string} | null>(null);
+
   const [logs, setLogs] = useState<any[]>([]);
   const [logCurrentPage, setLogCurrentPage] = useState(1);
   const logsPerPage = 10;
@@ -1364,6 +1368,7 @@ export default function App() {
       client.subscribe("dashboard/ngengat/deteksi");
       client.subscribe("dashboard/ngengat/baterai");
       client.subscribe("dashboard/ngengat/lingkungan");
+      client.subscribe("dashboard/ngengat/selftest");
       client.subscribe("dashboard/ngengat/settings"); // retained — sinkron pengaturan antar device
       client.subscribe("dashboard/ngengat/schedule"); // retained — jadwal alarm DS3231
     });
@@ -1495,6 +1500,19 @@ export default function App() {
             ...prev,
             { timestamp: now, node: nodeKey, temp, humidity },
           ]);
+        }
+        if (topic === "dashboard/ngengat/selftest") {
+          const st = {
+            ir_ok:    !!payload.ir_ok,
+            dht_ok:   !!payload.dht_ok,
+            rtc_ok:   !!payload.rtc_ok,
+            relay_ok: !!payload.relay_ok,
+            temp:     Number(payload.temp) || 0,
+            hum:      Number(payload.hum)  || 0,
+            rtcTime:  String(payload.rtcTime || "--"),
+          };
+          if (payload.node === "B") setSelfTestB(st);
+          else setSelfTestA(st);
         }
         if (topic === "dashboard/ngengat/schedule") {
           if (Array.isArray(payload.schedules)) {
@@ -3273,6 +3291,29 @@ export default function App() {
                   <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
                     Jadwal: 18:00 ON — 06:00 OFF (DS3231)
                   </p>
+                  {!isDemoMode && selfTestA && (
+                    <div className="border-t border-gray-100 dark:border-gray-700 pt-2 mt-1">
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">Status Hardware (boot test)</p>
+                      <div className="flex flex-wrap gap-1">
+                        {(["ir_ok","dht_ok","rtc_ok","relay_ok"] as const).map((k) => {
+                          const labels: Record<string, string> = {ir_ok:"IR",dht_ok:"DHT22",rtc_ok:"RTC",relay_ok:"Relay"};
+                          const ok = selfTestA[k];
+                          return (
+                            <span key={k} className={cn(
+                              "text-[10px] px-1.5 py-0.5 rounded font-semibold border",
+                              ok ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800"
+                                 : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                            )}>
+                              {ok ? "✓" : "✗"} {labels[k]}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {selfTestA.rtcTime !== "--" && (
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">RTC: {selfTestA.rtcTime}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -3357,6 +3398,29 @@ export default function App() {
                   <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
                     Jadwal: 18:00 ON — 06:00 OFF (DS3231)
                   </p>
+                  {!isDemoMode && selfTestB && (
+                    <div className="border-t border-gray-100 dark:border-gray-700 pt-2 mt-1">
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">Status Hardware (boot test)</p>
+                      <div className="flex flex-wrap gap-1">
+                        {(["ir_ok","dht_ok","rtc_ok","relay_ok"] as const).map((k) => {
+                          const labels: Record<string, string> = {ir_ok:"IR",dht_ok:"DHT22",rtc_ok:"RTC",relay_ok:"Relay"};
+                          const ok = selfTestB[k];
+                          return (
+                            <span key={k} className={cn(
+                              "text-[10px] px-1.5 py-0.5 rounded font-semibold border",
+                              ok ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800"
+                                 : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                            )}>
+                              {ok ? "✓" : "✗"} {labels[k]}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {selfTestB.rtcTime !== "--" && (
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">RTC: {selfTestB.rtcTime}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
