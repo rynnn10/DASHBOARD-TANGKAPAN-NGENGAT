@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Rabu, 24 Juni 2026 21:12 WIB
+// Terakhir diperbarui: Rabu, 24 Juni 2026 21:30 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -839,7 +839,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Rabu, 24 Juni 2026 21:12 WIB";
+const LAST_UPDATED = "Rabu, 24 Juni 2026 21:30 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -4873,7 +4873,7 @@ export default function App() {
                   <div className="bg-purple-50 dark:bg-purple-900/20 px-4 py-2.5 flex items-center gap-2">
                     <Bug className="w-4 h-4 text-purple-500" />
                     <span className="font-semibold text-sm text-purple-700 dark:text-purple-300">
-                      Sensor IR — Deteksi Ngengat
+                      Sensor IR KY-032 — Deteksi Ngengat
                     </span>
                   </div>
                   <div className="p-4">
@@ -4893,32 +4893,34 @@ export default function App() {
                       </thead>
                       <tbody className="text-gray-700 dark:text-gray-300">
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
-                          <td className="py-1.5 font-mono font-bold">VCC</td>
-                          <td className="py-1.5 font-mono text-red-500">5V</td>
-                          <td className="py-1.5">Dari pin VU (5V USB)</td>
+                          <td className="py-1.5 font-mono font-bold">+&nbsp;(VCC)</td>
+                          <td className="py-1.5 font-mono text-red-500">3.3V</td>
+                          <td className="py-1.5">Tegangan sensor — pakai 3.3V agar aman untuk GPIO ESP8266</td>
                         </tr>
                         <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">GND</td>
-                          <td className="py-1.5 font-mono text-gray-500">
-                            GND
-                          </td>
+                          <td className="py-1.5 font-mono text-gray-500">GND</td>
                           <td className="py-1.5">Ground</td>
                         </tr>
-                        <tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
                           <td className="py-1.5 font-mono font-bold">OUT</td>
-                          <td className="py-1.5 font-mono text-blue-500 font-bold">
-                            D1 (GPIO5)
-                          </td>
-                          <td className="py-1.5">Sinyal deteksi</td>
+                          <td className="py-1.5 font-mono text-blue-500 font-bold">D1 (GPIO5)</td>
+                          <td className="py-1.5">Sinyal deteksi — LOW saat objek terdeteksi</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold">EN</td>
+                          <td className="py-1.5 font-mono text-orange-500 font-bold">3.3V / Jumper</td>
+                          <td className="py-1.5">Enable sensor — biarkan jumper terpasang, atau sambung ke 3.3V. <strong>Jangan dibiarkan floating</strong></td>
                         </tr>
                       </tbody>
                     </table>
                     <div className="mt-2.5 flex items-start gap-1.5 text-[11px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>
-                        OUT bernilai <strong>LOW</strong> saat objek terdeteksi
-                        (active low). Sensitivitas bisa diatur lewat potensio di
-                        modul.
+                        OUT bernilai <strong>LOW</strong> saat objek terdeteksi (active low) — sama seperti LM393.
+                        Ada 2 trimpot: satu mengatur jarak deteksi, satu mengatur frekuensi IR.
+                        LED indikator di modul akan menyala saat mendeteksi objek — pakai ini untuk uji coba awal.
+                        Jika sensor tidak mendeteksi: (1) pastikan pin EN tidak floating, (2) putar trimpot jarak searah jarum jam perlahan.
                       </span>
                     </div>
                   </div>
@@ -4969,100 +4971,25 @@ export default function App() {
                           </td>
                           <td className="py-1.5">I2C data (custom)</td>
                         </tr>
-                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                        <tr>
                           <td className="py-1.5 font-mono font-bold">SCL</td>
                           <td className="py-1.5 font-mono text-blue-500 font-bold">
                             D6 (GPIO12)
                           </td>
                           <td className="py-1.5">I2C clock (custom)</td>
                         </tr>
-                        <tr>
-                          <td className="py-1.5 font-mono font-bold text-violet-600">SQW</td>
-                          <td className="py-1.5 font-mono text-violet-600 font-bold">
-                            RST
-                          </td>
-                          <td className="py-1.5">Alarm wake-up</td>
-                        </tr>
                       </tbody>
                     </table>
-                    <div className="mt-2 flex items-start gap-1.5 text-[11px] text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/10 rounded-lg p-2">
-                      <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <div className="space-y-2">
-                        <p>
-                          <strong>SQW ada di baris bawah modul</strong>{" "}
-                          (urutan kiri→kanan: 32K,{" "}
-                          <strong className="text-violet-600">SQW</strong>,
-                          SCL, SDA, VCC, GND).
-                        </p>
-                        <p className="font-semibold">Rangkaian pull-up:</p>
-                        <div className="bg-violet-100 dark:bg-violet-900/30 rounded-lg p-3">
-                          <div className="flex flex-col items-start gap-0 font-mono text-[10px]">
-                            <span className="px-2 py-0.5 bg-red-500 text-white rounded font-bold">
-                              NodeMCU 3.3V
-                            </span>
-                            <span className="text-violet-400 pl-3 leading-tight">│</span>
-                            <span className="px-2 py-0.5 bg-violet-600 text-white rounded font-bold ml-1">
-                              Resistor 12kΩ
-                            </span>
-                            <span className="text-violet-400 pl-3 leading-tight">│</span>
-                            <span className="text-violet-500 dark:text-violet-300 pl-1 text-[9px]">
-                              ● titik temu (junction)
-                            </span>
-                            <div className="flex flex-col gap-1 mt-1 pl-3 ml-1 border-l-2 border-violet-400">
-                              <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-bold w-fit">
-                                → NodeMCU RST
-                              </span>
-                              <span className="px-2 py-0.5 bg-cyan-600 text-white rounded font-bold w-fit">
-                                → DS3231 SQW
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <p>
-                          Resistor dipasang antara pin <strong>3.3V NodeMCU</strong>{" "}
-                          dan <strong>titik temu (junction)</strong> kabel RST+SQW.
-                          Jadi: ujung pertama resistor ke 3.3V, ujung kedua
-                          bercabang ke RST dan SQW sekaligus. <em>Satu resistor,
-                          dua tujuan</em>.
-                        </p>
-                        <p className="font-semibold">Cara kerja lengkap:</p>
-                        <ol className="list-decimal list-inside space-y-1 leading-relaxed">
-                          <li>
-                            <strong>Normal (tidak ada alarm):</strong> resistor
-                            menarik RST ke 3.3V (HIGH) → NodeMCU berjalan
-                            normal. SQW dalam keadaan high-impedance (tidak menarik
-                            ke mana-mana), jadi tidak mengganggu.
-                          </li>
-                          <li>
-                            <strong>Alarm DS3231 aktif:</strong> DS3231
-                            menarik SQW ke GND (LOW) melalui transistor
-                            internal. Karena SQW terhubung ke RST, pin RST
-                            ikut tertarik LOW → NodeMCU reset/boot.
-                          </li>
-                          <li>
-                            <strong>Setelah reset:</strong> SQW kembali
-                            high-impedance, resistor menarik RST HIGH lagi
-                            → NodeMCU berjalan normal.
-                          </li>
-                        </ol>
-                        <p className="text-[10px] text-violet-600 dark:text-violet-500">
-                          Nilai 10kΩ–15kΩ semua aman. 12kΩ milikmu bekerja
-                          sempurna. <strong>Jangan</strong> pasang ujung kedua
-                          resistor ke GND — RST akan terus LOW, NodeMCU
-                          tidak bisa boot.
-                        </p>
-                      </div>
-                    </div>
                     <div className="mt-2 flex items-start gap-1.5 text-[11px] text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/10 rounded-lg p-2">
                       <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>
-                        I2C menggunakan pin <strong>custom</strong> (D5 sebagai
-                        SDA, D6 sebagai SCL), bukan default NodeMCU (D2/D1).
-                        Ini agar D1 &amp; D2 tetap bebas untuk IR dan DHT22.
-                        Modul DS3231 umumnya sudah punya pull-up internal pada
-                        SDA &amp; SCL — resistor 12kΩ di atas <em>khusus</em> untuk
-                        jalur SQW→RST saja, bukan untuk I2C.
-                      </span>
+                      <div className="space-y-1">
+                        <p>
+                          I2C menggunakan pin <strong>custom</strong> (D5=SDA, D6=SCL) agar D1 &amp; D2 bebas untuk sensor IR dan DHT22. Pin SQW <strong>tidak digunakan</strong>.
+                        </p>
+                        <p>
+                          Jika Serial Monitor menampilkan <strong>"RTC tidak ditemukan"</strong>: pasang resistor pull-up <strong>4.7kΩ</strong> dari pin <strong>SDA ke 3.3V</strong> dan <strong>SCL ke 3.3V</strong>. Modul DS3231 beberapa varian tidak punya pull-up internal.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -5424,7 +5351,7 @@ export default function App() {
                       {[
                         {
                           pin: "D1",
-                          func: "Sensor IR (OUT)",
+                          func: "KY-032 IR (OUT)",
                           color: "text-purple-600 dark:text-purple-400",
                         },
                         {
@@ -5451,11 +5378,6 @@ export default function App() {
                           pin: "A0",
                           func: "Volt.Sensor (S)",
                           color: "text-green-600 dark:text-green-400",
-                        },
-                        {
-                          pin: "SQW",
-                          func: "→ RST (alarm wake)",
-                          color: "text-violet-600 dark:text-violet-400",
                         },
                       ].map((item) => (
                         <div
