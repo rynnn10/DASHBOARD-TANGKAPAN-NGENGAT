@@ -39,35 +39,20 @@ function doPost(e) {
       } catch (e) {}
     }
 
-    // Sheet lama (backward compat) — cek juga saat login/register agar akun lama tetap bisa masuk
+    // Tipe akun berdasarkan mode: Demo dan Asli adalah AKUN TERPISAH
+    // (boleh email sama, password & data berbeda) dibedakan kolom "Tipe".
+    var wantedTipe = data.isDemoMode ? "Demo" : "Asli";
+
+    // Sheet lama (backward compat) — TIDAK dihapus. Users_Demo = akun Demo,
+    // Users_DataAsli = akun Asli. Dibaca saat login agar akun lama tetap masuk.
     var sUsersDemo = sheet.getSheetByName("Users_Demo");
     var sUsersAsli = sheet.getSheetByName("Users_DataAsli");
-    var legacySheets = [sUsersDemo, sUsersAsli].filter(function (s) {
-      return !!s;
-    });
-
-    // Migrasi akun dari sheet lama ke Users utama lalu hapus sheet lama
-    var legacyToMigrate = [sUsersDemo, sUsersAsli];
-    legacyToMigrate.forEach(function(ls) {
-      if (!ls || ls.getLastRow() < 2) {
-        if (ls && sheet.getSheets().length > 1) { try { sheet.deleteSheet(ls); } catch(e2) {} }
-        return;
-      }
-      var legRows = ls.getDataRange().getValues().slice(1);
-      var mainEmails = getSheetRows(sUsers).map(function(r) { return String(r[0]).toLowerCase().trim(); });
-      legRows.forEach(function(row) {
-        var em = String(row[0]).toLowerCase().trim();
-        if (em && mainEmails.indexOf(em) === -1) {
-          sUsers.appendRow([em, row[1], row[2] || "", row[3] || "", row[4] || "", row[5] || new Date().toISOString()]);
-          mainEmails.push(em);
-        }
-      });
-      if (sheet.getSheets().length > 1) { try { sheet.deleteSheet(ls); } catch(e2) {} }
-    });
+    var legacyForMode = data.isDemoMode ? sUsersDemo : sUsersAsli;
 
     // ============================================
     // 1. FITUR AKUN (Register & Login & Update)
     // ============================================
+    // Buat header + pastikan kolom "Tipe" (kolom 7) ada
     if (sUsers.getLastRow() === 0) {
       sUsers.appendRow([
         "Email",
@@ -76,27 +61,48 @@ function doPost(e) {
         "PhotoURL",
         "CoverURL",
         "Dibuat Sejak",
+        "Tipe",
       ]);
-      styleHeader(sUsers, 6, "#7c3aed");
+      styleHeader(sUsers, 7, "#7c3aed");
+    } else if (!sUsers.getRange(1, 7).getValue()) {
+      sUsers.getRange(1, 7).setValue("Tipe");
+      styleHeader(sUsers, 7, "#7c3aed");
     }
 
     if (data.action === "register") {
-      // Cek duplikat di sheet utama DAN sheet lama
-      var allSheetsToCheck = [sUsers].concat(legacySheets);
-      for (var sc = 0; sc < allSheetsToCheck.length; sc++) {
-        var rows = getSheetRows(allSheetsToCheck[sc]);
-        for (var i = 0; i < rows.length; i++) {
-          if (String(rows[i][0]).toLowerCase().trim() === emailNorm) {
-            return ContentService.createTextOutput(
-              JSON.stringify({
-                status: "error",
-                message: "Email sudah terdaftar!",
-              }),
-            ).setMimeType(ContentService.MimeType.JSON);
-          }
+      // Cek duplikat HANYA untuk tipe yang sama (Demo/Asli akun terpisah)
+      var regRows = getSheetRows(sUsers);
+      for (var i = 0; i < regRows.length; i++) {
+        var rEm = String(regRows[i][0]).toLowerCase().trim();
+        var rTp = String(regRows[i][6] || "").trim();
+        if (rEm === emailNorm && rTp === wantedTipe) {
+          return ContentService.createTextOutput(
+            JSON.stringify({
+              status: "error",
+              message:
+                "Email sudah terdaftar untuk mode " +
+                (data.isDemoMode ? "Demo" : "Asli") +
+                "!",
+            }),
+          ).setMimeType(ContentService.MimeType.JSON);
         }
       }
-      // Simpan ke sheet utama dengan email ternormalisasi
+      // Cek juga sheet lama untuk mode yang sama
+      var regLegRows = getSheetRows(legacyForMode);
+      for (var i = 0; i < regLegRows.length; i++) {
+        if (String(regLegRows[i][0]).toLowerCase().trim() === emailNorm) {
+          return ContentService.createTextOutput(
+            JSON.stringify({
+              status: "error",
+              message:
+                "Email sudah terdaftar untuk mode " +
+                (data.isDemoMode ? "Demo" : "Asli") +
+                "!",
+            }),
+          ).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+      // Simpan dengan Tipe
       sUsers.appendRow([
         emailNorm,
         data.password,
@@ -104,6 +110,7 @@ function doPost(e) {
         data.photoURL || "",
         data.coverUrl || "",
         new Date().toISOString(),
+        wantedTipe,
       ]);
       return ContentService.createTextOutput(
         JSON.stringify({
@@ -121,28 +128,51 @@ function doPost(e) {
 
     if (data.action === "login") {
       var pwd = String(data.password || "");
-      // Cari di sheet utama dulu, lalu sheet lama (backward compat)
-      var loginSheetsToCheck = [sUsers].concat(legacySheets);
-      for (var sc = 0; sc < loginSheetsToCheck.length; sc++) {
-        var rows = getSheetRows(loginSheetsToCheck[sc]);
-        for (var i = 0; i < rows.length; i++) {
-          if (
-            String(rows[i][0]).toLowerCase().trim() === emailNorm &&
-            String(rows[i][1]) === pwd
-          ) {
-            return ContentService.createTextOutput(
-              JSON.stringify({
-                status: "success",
-                message: "Login berhasil!",
-                data: {
-                  email: rows[i][0],
-                  name: rows[i][2],
-                  photoURL: rows[i][3],
-                  coverUrl: rows[i][4],
-                },
-              }),
-            ).setMimeType(ContentService.MimeType.JSON);
-          }
+      // 1. Sheet utama: cocokkan email+password DAN (Tipe sesuai mode ATAU Tipe kosong/legacy)
+      var allUsers = sUsers.getDataRange().getValues();
+      for (var i = 1; i < allUsers.length; i++) {
+        var uEm = String(allUsers[i][0]).toLowerCase().trim();
+        var uTp = String(allUsers[i][6] || "").trim();
+        if (
+          uEm === emailNorm &&
+          String(allUsers[i][1]) === pwd &&
+          (uTp === wantedTipe || uTp === "")
+        ) {
+          // Self-heal: isi Tipe baris lama yang masih kosong
+          if (uTp === "") sUsers.getRange(i + 1, 7).setValue(wantedTipe);
+          return ContentService.createTextOutput(
+            JSON.stringify({
+              status: "success",
+              message: "Login berhasil!",
+              data: {
+                email: allUsers[i][0],
+                name: allUsers[i][2],
+                photoURL: allUsers[i][3],
+                coverUrl: allUsers[i][4],
+              },
+            }),
+          ).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+      // 2. Sheet lama untuk mode ini (Users_Demo / Users_DataAsli)
+      var legLoginRows = getSheetRows(legacyForMode);
+      for (var i = 0; i < legLoginRows.length; i++) {
+        if (
+          String(legLoginRows[i][0]).toLowerCase().trim() === emailNorm &&
+          String(legLoginRows[i][1]) === pwd
+        ) {
+          return ContentService.createTextOutput(
+            JSON.stringify({
+              status: "success",
+              message: "Login berhasil!",
+              data: {
+                email: legLoginRows[i][0],
+                name: legLoginRows[i][2],
+                photoURL: legLoginRows[i][3],
+                coverUrl: legLoginRows[i][4],
+              },
+            }),
+          ).setMimeType(ContentService.MimeType.JSON);
         }
       }
       return ContentService.createTextOutput(
@@ -154,17 +184,33 @@ function doPost(e) {
     }
 
     if (data.action === "updateProfile") {
-      // Cari user di sheet utama DAN sheet lama
-      var updateSheetsToCheck = [sUsers].concat(legacySheets);
-      for (var sc = 0; sc < updateSheetsToCheck.length; sc++) {
-        var targetSheet = updateSheetsToCheck[sc];
-        if (!targetSheet || targetSheet.getLastRow() < 2) continue;
-        var updateRows = targetSheet.getDataRange().getValues();
-        for (var i = 1; i < updateRows.length; i++) {
-          if (String(updateRows[i][0]).toLowerCase().trim() === emailNorm) {
-            targetSheet.getRange(i + 1, 3).setValue(data.displayName);
-            targetSheet.getRange(i + 1, 4).setValue(data.photoURL);
-            targetSheet.getRange(i + 1, 5).setValue(data.coverUrl);
+      // Cari user di sheet utama (cocokkan Tipe sesuai mode atau kosong), lalu sheet lama
+      if (sUsers.getLastRow() >= 2) {
+        var updMain = sUsers.getDataRange().getValues();
+        for (var i = 1; i < updMain.length; i++) {
+          var mEm = String(updMain[i][0]).toLowerCase().trim();
+          var mTp = String(updMain[i][6] || "").trim();
+          if (mEm === emailNorm && (mTp === wantedTipe || mTp === "")) {
+            sUsers.getRange(i + 1, 3).setValue(data.displayName);
+            sUsers.getRange(i + 1, 4).setValue(data.photoURL);
+            sUsers.getRange(i + 1, 5).setValue(data.coverUrl);
+            if (mTp === "") sUsers.getRange(i + 1, 7).setValue(wantedTipe);
+            return ContentService.createTextOutput(
+              JSON.stringify({
+                status: "success",
+                message: "Profile updated!",
+              }),
+            ).setMimeType(ContentService.MimeType.JSON);
+          }
+        }
+      }
+      if (legacyForMode && legacyForMode.getLastRow() >= 2) {
+        var updLeg = legacyForMode.getDataRange().getValues();
+        for (var i = 1; i < updLeg.length; i++) {
+          if (String(updLeg[i][0]).toLowerCase().trim() === emailNorm) {
+            legacyForMode.getRange(i + 1, 3).setValue(data.displayName);
+            legacyForMode.getRange(i + 1, 4).setValue(data.photoURL);
+            legacyForMode.getRange(i + 1, 5).setValue(data.coverUrl);
             return ContentService.createTextOutput(
               JSON.stringify({
                 status: "success",
@@ -408,7 +454,8 @@ function doPost(e) {
       // ── Refresh warna header semua sheet yang ada ─────────────────────────
       (function() {
         var colorMap = [
-          { re: /^Users$|^Users_DataAsli$|^Users_Demo$/, cols: 6, color: "#7c3aed" },
+          { re: /^Users$/, cols: 7, color: "#7c3aed" },
+          { re: /^Users_DataAsli$|^Users_Demo$/, cols: 6, color: "#7c3aed" },
           { re: /^Log_Login$/, cols: 8, color: "#1e40af" },
           { re: /^Jadwal_Alarm$/, cols: 3, color: "#b45309" },
           { re: /^Logs_/, cols: 5, color: "#be123c" },

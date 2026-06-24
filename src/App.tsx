@@ -493,17 +493,34 @@ function buildDhtChartFromHistory(
   }));
 }
 
+// Label rentang waktu yang dapat dibaca manusia (untuk tooltip grafik batang)
+const DURATION_LABELS: Record<string, string> = {
+  hari_ini: "Hari Ini",
+  "3_hari": "3 Hari Terakhir",
+  "7_hari": "7 Hari Terakhir",
+  minggu_ini: "Minggu Ini",
+  "4_minggu": "4 Minggu Terakhir",
+  "7_minggu": "7 Minggu Terakhir",
+  bulan_ini: "Bulan Ini",
+  "3_bulan": "3 Bulan Terakhir",
+  "6_bulan": "6 Bulan Terakhir",
+  tahun_ini: "Tahun Ini",
+  "2_tahun": "1-2 Tahun Terakhir",
+  "5_tahun": "5 Tahun Terakhir",
+};
+
 // Custom tooltip untuk semua grafik — menampilkan "Hari, Tgl Bln Thn Jam:Mnt" + ±SD jika ada
 const ChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   const startMs: number | undefined = payload[0]?.payload?.startMs;
+  const periodLabel: string | undefined = payload[0]?.payload?.periodLabel;
   const visibleEntries = payload.filter((e: any) =>
     e.value != null && !String(e.dataKey).endsWith('_sd')
   );
   return (
     <div className="bg-gray-900 dark:bg-gray-950 border border-gray-700 rounded-xl p-2.5 shadow-2xl text-xs min-w-[150px]">
       <p className="text-gray-300 font-semibold mb-1.5 pb-1.5 border-b border-gray-700">
-        {startMs ? fmtBucketTs(startMs) : label}
+        {periodLabel ? periodLabel : startMs ? fmtBucketTs(startMs) : label}
       </p>
       {visibleEntries.map((entry: any, i: number) => {
         const sdKey = String(entry.dataKey) + '_sd';
@@ -3250,7 +3267,7 @@ export default function App() {
                     Fluktuasi Waktu Kedatangan
                   </h3>
                   <div className="flex flex-col gap-1.5 items-end">
-                    {timeRange === "kustom" && (
+                    {timeRange === "kustom" ? (
                       <div className="flex gap-1.5 items-center">
                         <input type="date" value={catchCustomStart} onChange={e => setCatchCustomStart(e.target.value)}
                           className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
@@ -3258,45 +3275,44 @@ export default function App() {
                         <input type="date" value={catchCustomEnd} onChange={e => setCatchCustomEnd(e.target.value)}
                           className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                       </div>
+                    ) : (
+                      <select
+                        aria-label="Pilih rentang waktu grafik"
+                        value={timeDuration}
+                        onChange={(e) => setTimeDuration(e.target.value)}
+                        className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                      >
+                        {timeRange === "hari" && (
+                          <>
+                            <option value="hari_ini">Hari Ini</option>
+                            <option value="3_hari">3 Hari Terakhir</option>
+                            <option value="7_hari">7 Hari Terakhir</option>
+                          </>
+                        )}
+                        {timeRange === "minggu" && (
+                          <>
+                            <option value="minggu_ini">Minggu Ini</option>
+                            <option value="4_minggu">4 Minggu Terakhir</option>
+                            <option value="7_minggu">7 Minggu Terakhir</option>
+                          </>
+                        )}
+                        {timeRange === "bulan" && (
+                          <>
+                            <option value="bulan_ini">Bulan Ini</option>
+                            <option value="3_bulan">3 Bulan Terakhir</option>
+                            <option value="6_bulan">6 Bulan Terakhir</option>
+                          </>
+                        )}
+                        {timeRange === "tahun" && (
+                          <>
+                            <option value="tahun_ini">Tahun Ini</option>
+                            <option value="2_tahun">1-2 Tahun Terakhir</option>
+                            <option value="5_tahun">5 Tahun Terakhir</option>
+                          </>
+                        )}
+                      </select>
                     )}
                     <div className="flex items-center gap-2">
-                      {timeRange !== "kustom" && (
-                        <select
-                          aria-label="Pilih rentang waktu grafik"
-                          value={timeDuration}
-                          onChange={(e) => setTimeDuration(e.target.value)}
-                          className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
-                        >
-                          {timeRange === "hari" && (
-                            <>
-                              <option value="hari_ini">Hari Ini</option>
-                              <option value="3_hari">3 Hari Terakhir</option>
-                              <option value="7_hari">7 Hari Terakhir</option>
-                            </>
-                          )}
-                          {timeRange === "minggu" && (
-                            <>
-                              <option value="minggu_ini">Minggu Ini</option>
-                              <option value="4_minggu">4 Minggu Terakhir</option>
-                              <option value="7_minggu">7 Minggu Terakhir</option>
-                            </>
-                          )}
-                          {timeRange === "bulan" && (
-                            <>
-                              <option value="bulan_ini">Bulan Ini</option>
-                              <option value="3_bulan">3 Bulan Terakhir</option>
-                              <option value="6_bulan">6 Bulan Terakhir</option>
-                            </>
-                          )}
-                          {timeRange === "tahun" && (
-                            <>
-                              <option value="tahun_ini">Tahun Ini</option>
-                              <option value="2_tahun">1-2 Tahun Terakhir</option>
-                              <option value="5_tahun">5 Tahun Terakhir</option>
-                            </>
-                          )}
-                        </select>
-                      )}
                       <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                           (t) => (
@@ -3400,7 +3416,7 @@ export default function App() {
                     </p>
                   </div>
                   <div className="flex flex-col gap-1.5 items-end">
-                    {effectTimeRange === "kustom" && (
+                    {effectTimeRange === "kustom" ? (
                       <div className="flex gap-1.5 items-center">
                         <input type="date" value={effectCustomStart} onChange={e => setEffectCustomStart(e.target.value)}
                           className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
@@ -3408,45 +3424,44 @@ export default function App() {
                         <input type="date" value={effectCustomEnd} onChange={e => setEffectCustomEnd(e.target.value)}
                           className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                       </div>
+                    ) : (
+                      <select
+                        aria-label="Pilih rentang waktu perbandingan"
+                        value={effectTimeDuration}
+                        onChange={(e) => setEffectTimeDuration(e.target.value)}
+                        className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                      >
+                        {effectTimeRange === "hari" && (
+                          <>
+                            <option value="hari_ini">Hari Ini</option>
+                            <option value="3_hari">3 Hari Terakhir</option>
+                            <option value="7_hari">7 Hari Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "minggu" && (
+                          <>
+                            <option value="minggu_ini">Minggu Ini</option>
+                            <option value="4_minggu">4 Minggu Terakhir</option>
+                            <option value="7_minggu">7 Minggu Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "bulan" && (
+                          <>
+                            <option value="bulan_ini">Bulan Ini</option>
+                            <option value="3_bulan">3 Bulan Terakhir</option>
+                            <option value="6_bulan">6 Bulan Terakhir</option>
+                          </>
+                        )}
+                        {effectTimeRange === "tahun" && (
+                          <>
+                            <option value="tahun_ini">Tahun Ini</option>
+                            <option value="2_tahun">1-2 Tahun Terakhir</option>
+                            <option value="5_tahun">5 Tahun Terakhir</option>
+                          </>
+                        )}
+                      </select>
                     )}
                     <div className="flex items-center gap-2">
-                      {effectTimeRange !== "kustom" && (
-                        <select
-                          aria-label="Pilih rentang waktu perbandingan"
-                          value={effectTimeDuration}
-                          onChange={(e) => setEffectTimeDuration(e.target.value)}
-                          className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
-                        >
-                          {effectTimeRange === "hari" && (
-                            <>
-                              <option value="hari_ini">Hari Ini</option>
-                              <option value="3_hari">3 Hari Terakhir</option>
-                              <option value="7_hari">7 Hari Terakhir</option>
-                            </>
-                          )}
-                          {effectTimeRange === "minggu" && (
-                            <>
-                              <option value="minggu_ini">Minggu Ini</option>
-                              <option value="4_minggu">4 Minggu Terakhir</option>
-                              <option value="7_minggu">7 Minggu Terakhir</option>
-                            </>
-                          )}
-                          {effectTimeRange === "bulan" && (
-                            <>
-                              <option value="bulan_ini">Bulan Ini</option>
-                              <option value="3_bulan">3 Bulan Terakhir</option>
-                              <option value="6_bulan">6 Bulan Terakhir</option>
-                            </>
-                          )}
-                          {effectTimeRange === "tahun" && (
-                            <>
-                              <option value="tahun_ini">Tahun Ini</option>
-                              <option value="2_tahun">1-2 Tahun Terakhir</option>
-                              <option value="5_tahun">5 Tahun Terakhir</option>
-                            </>
-                          )}
-                        </select>
-                      )}
                       <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                         {(["total", "rata-rata"] as const).map((m) => (
                           <button
@@ -3528,6 +3543,13 @@ export default function App() {
                                 : "Total Tangkapan",
                             NodeA: effectChartData.NodeA,
                             NodeB: effectChartData.NodeB,
+                            periodLabel:
+                              effectTimeRange === "kustom"
+                                ? effectCustomStart && effectCustomEnd
+                                  ? `${fmtBucketTs(new Date(effectCustomStart + "T00:00:00").getTime())} – ${fmtBucketTs(new Date(effectCustomEnd + "T00:00:00").getTime())}`
+                                  : "Rentang kustom"
+                                : DURATION_LABELS[effectTimeDuration] ||
+                                  effectTimeDuration,
                           },
                         ]}
                       >
@@ -3570,7 +3592,7 @@ export default function App() {
                   Grafik Suhu &amp; Kelembaban
                 </h3>
                 <div className="flex flex-col gap-1.5 items-end">
-                  {dhtTimeRange === "kustom" && (
+                  {dhtTimeRange === "kustom" ? (
                     <div className="flex gap-1.5 items-center">
                       <input type="date" value={dhtCustomStart} onChange={e => setDhtCustomStart(e.target.value)}
                         className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
@@ -3578,45 +3600,44 @@ export default function App() {
                       <input type="date" value={dhtCustomEnd} onChange={e => setDhtCustomEnd(e.target.value)}
                         className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
                     </div>
+                  ) : (
+                    <select
+                      aria-label="Pilih rentang waktu grafik suhu"
+                      value={dhtTimeDuration}
+                      onChange={(e) => setDhtTimeDuration(e.target.value)}
+                      className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
+                    >
+                      {dhtTimeRange === "hari" && (
+                        <>
+                          <option value="hari_ini">Hari Ini</option>
+                          <option value="3_hari">3 Hari Terakhir</option>
+                          <option value="7_hari">7 Hari Terakhir</option>
+                        </>
+                      )}
+                      {dhtTimeRange === "minggu" && (
+                        <>
+                          <option value="minggu_ini">Minggu Ini</option>
+                          <option value="4_minggu">4 Minggu Terakhir</option>
+                          <option value="7_minggu">7 Minggu Terakhir</option>
+                        </>
+                      )}
+                      {dhtTimeRange === "bulan" && (
+                        <>
+                          <option value="bulan_ini">Bulan Ini</option>
+                          <option value="3_bulan">3 Bulan Terakhir</option>
+                          <option value="6_bulan">6 Bulan Terakhir</option>
+                        </>
+                      )}
+                      {dhtTimeRange === "tahun" && (
+                        <>
+                          <option value="tahun_ini">Tahun Ini</option>
+                          <option value="2_tahun">1-2 Tahun Terakhir</option>
+                          <option value="5_tahun">5 Tahun Terakhir</option>
+                        </>
+                      )}
+                    </select>
                   )}
                   <div className="flex items-center gap-2">
-                    {dhtTimeRange !== "kustom" && (
-                      <select
-                        aria-label="Pilih rentang waktu grafik suhu"
-                        value={dhtTimeDuration}
-                        onChange={(e) => setDhtTimeDuration(e.target.value)}
-                        className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
-                      >
-                        {dhtTimeRange === "hari" && (
-                          <>
-                            <option value="hari_ini">Hari Ini</option>
-                            <option value="3_hari">3 Hari Terakhir</option>
-                            <option value="7_hari">7 Hari Terakhir</option>
-                          </>
-                        )}
-                        {dhtTimeRange === "minggu" && (
-                          <>
-                            <option value="minggu_ini">Minggu Ini</option>
-                            <option value="4_minggu">4 Minggu Terakhir</option>
-                            <option value="7_minggu">7 Minggu Terakhir</option>
-                          </>
-                        )}
-                        {dhtTimeRange === "bulan" && (
-                          <>
-                            <option value="bulan_ini">Bulan Ini</option>
-                            <option value="3_bulan">3 Bulan Terakhir</option>
-                            <option value="6_bulan">6 Bulan Terakhir</option>
-                          </>
-                        )}
-                        {dhtTimeRange === "tahun" && (
-                          <>
-                            <option value="tahun_ini">Tahun Ini</option>
-                            <option value="2_tahun">1-2 Tahun Terakhir</option>
-                            <option value="5_tahun">5 Tahun Terakhir</option>
-                          </>
-                        )}
-                      </select>
-                    )}
                     <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                       {(["hari", "minggu", "bulan", "tahun", "kustom"] as const).map(
                         (t) => (
@@ -4716,10 +4737,29 @@ export default function App() {
                           SCL, SDA, VCC, GND).
                         </p>
                         <p className="font-semibold">Rangkaian pull-up:</p>
-                        <code className="block bg-violet-100 dark:bg-violet-900/30 rounded px-2 py-1.5 font-mono text-[10px] leading-loose whitespace-pre">
-{"NodeMCU 3.3V ──[12kΩ]──┬── NodeMCU RST"}
-{"\n                        └── DS3231 SQW"}
-                        </code>
+                        <div className="bg-violet-100 dark:bg-violet-900/30 rounded-lg p-3">
+                          <div className="flex flex-col items-start gap-0 font-mono text-[10px]">
+                            <span className="px-2 py-0.5 bg-red-500 text-white rounded font-bold">
+                              NodeMCU 3.3V
+                            </span>
+                            <span className="text-violet-400 pl-3 leading-tight">│</span>
+                            <span className="px-2 py-0.5 bg-violet-600 text-white rounded font-bold ml-1">
+                              Resistor 12kΩ
+                            </span>
+                            <span className="text-violet-400 pl-3 leading-tight">│</span>
+                            <span className="text-violet-500 dark:text-violet-300 pl-1 text-[9px]">
+                              ● titik temu (junction)
+                            </span>
+                            <div className="flex flex-col gap-1 mt-1 pl-3 ml-1 border-l-2 border-violet-400">
+                              <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-bold w-fit">
+                                → NodeMCU RST
+                              </span>
+                              <span className="px-2 py-0.5 bg-cyan-600 text-white rounded font-bold w-fit">
+                                → DS3231 SQW
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                         <p>
                           Resistor dipasang antara pin <strong>3.3V NodeMCU</strong>{" "}
                           dan <strong>titik temu (junction)</strong> kabel RST+SQW.
@@ -4778,6 +4818,9 @@ export default function App() {
                     </span>
                   </div>
                   <div className="p-4">
+                    <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-300 mb-1.5">
+                      Sisi input (kontrol) — ke NodeMCU:
+                    </p>
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
@@ -4821,6 +4864,99 @@ export default function App() {
                         menyala), IN=HIGH → relay OFF. Jadwal otomatis:{" "}
                         <strong>18:00 ON</strong> — <strong>06:00 OFF</strong>{" "}
                         (dikontrol DS3231).
+                      </span>
+                    </div>
+
+                    {/* Jumper Hi/Lo */}
+                    <div className="mt-2 flex items-start gap-1.5 text-[11px] text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/10 rounded-lg p-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>PENTING — Jumper Hi/Lo:</strong> modul ini punya
+                        jumper pemilih trigger (High/Low) di dekat pin IN.
+                        Punyamu sekarang ada di posisi <strong>High</strong> —{" "}
+                        <strong>pindahkan ke posisi LOW (L)</strong>. Firmware
+                        memakai <em>Active LOW</em>, jadi jika tetap di High relay
+                        akan menyala terbalik (ON di luar jadwal).
+                      </span>
+                    </div>
+
+                    {/* Wiring sisi output ke bohlam DC */}
+                    <p className="mt-3 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                      Sisi output (screw terminal) — ke Bohlam DC:
+                    </p>
+                    <table className="w-full text-xs mt-1.5">
+                      <thead>
+                        <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                          <th className="text-left pb-2 font-semibold">
+                            Terminal Relay
+                          </th>
+                          <th className="text-left pb-2 font-semibold">
+                            Disambung ke
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-700 dark:text-gray-300">
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold">COM</td>
+                          <td className="py-1.5">
+                            Kutub <strong>+</strong> sumber DC (baterai/adaptor)
+                          </td>
+                        </tr>
+                        <tr className="border-b border-gray-50 dark:border-gray-700/50">
+                          <td className="py-1.5 font-mono font-bold text-emerald-600">
+                            NO
+                          </td>
+                          <td className="py-1.5">
+                            Kaki <strong>+</strong> bohlam DC
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 font-mono font-bold text-gray-400">
+                            NC
+                          </td>
+                          <td className="py-1.5 text-gray-400">
+                            Dikosongkan (tidak dipakai)
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    {/* Diagram jalur bohlam */}
+                    <div className="mt-2 bg-yellow-100 dark:bg-yellow-900/20 rounded-lg p-3">
+                      <div className="flex flex-col items-start gap-1 font-mono text-[10px]">
+                        <span className="px-2 py-0.5 bg-red-500 text-white rounded font-bold w-fit">
+                          Sumber DC (+)
+                        </span>
+                        <span className="text-yellow-500 pl-3 leading-tight">↓</span>
+                        <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-bold w-fit">
+                          COM (relay)
+                        </span>
+                        <span className="text-yellow-500 pl-3 leading-tight">↓ saat relay ON</span>
+                        <span className="px-2 py-0.5 bg-emerald-600 text-white rounded font-bold w-fit">
+                          NO (relay)
+                        </span>
+                        <span className="text-yellow-500 pl-3 leading-tight">↓</span>
+                        <span className="px-2 py-0.5 bg-amber-500 text-white rounded font-bold w-fit">
+                          Bohlam (+) … Bohlam (−)
+                        </span>
+                        <span className="text-yellow-500 pl-3 leading-tight">↓</span>
+                        <span className="px-2 py-0.5 bg-gray-600 text-white rounded font-bold w-fit">
+                          Sumber DC (−)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-start gap-1.5 text-[11px] text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/10 rounded-lg p-2">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        Bohlam DC <strong>tidak</strong> diberi daya dari pin
+                        NodeMCU — relay hanya bertindak sebagai{" "}
+                        <strong>saklar</strong> yang memutus/menyambung jalur{" "}
+                        <strong>+</strong> dari sumber DC. Pakai sumber DC yang
+                        sesuai tegangan bohlam (mis. 12V). Sisi NodeMCU (VCC/GND/IN)
+                        terisolasi dari sisi bohlam lewat optocoupler, jadi aman.
+                        Pakai terminal <strong>NO</strong> supaya bohlam{" "}
+                        <strong>MATI</strong> saat relay OFF / NodeMCU mati.
                       </span>
                     </div>
                   </div>
