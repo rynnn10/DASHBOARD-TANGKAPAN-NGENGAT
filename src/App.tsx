@@ -2327,6 +2327,23 @@ export default function App() {
       );
   };
 
+  // Domain email sementara/disposable yang sering dipakai bot/akun palsu
+  const DISPOSABLE_EMAIL_DOMAINS = [
+    "mailinator.com", "tempmail.com", "temp-mail.org", "10minutemail.com",
+    "guerrillamail.com", "guerrillamail.info", "guerrillamail.net",
+    "sharklasers.com", "yopmail.com", "throwawaymail.com", "getnada.com",
+    "trashmail.com", "maildrop.cc", "dispostable.com", "fakeinbox.com",
+    "mailnesia.com", "tempinbox.com", "mohmal.com", "emailondeck.com",
+    "spam4.me", "mintemail.com", "mytemp.email", "tempr.email", "moakt.com",
+    "1secmail.com", "33mail.com", "burnermail.io", "temp-mail.io",
+  ];
+  const isDisposableEmail = (email: string) => {
+    const domain = String(email).toLowerCase().trim().split("@")[1] || "";
+    return DISPOSABLE_EMAIL_DOMAINS.some(
+      (d) => domain === d || domain.endsWith("." + d),
+    );
+  };
+
   const validatePassword = (password: string) => {
     // Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special character
     const re =
@@ -2424,6 +2441,12 @@ export default function App() {
     }
     if (!validateEmail(loginEmail)) {
       setLoginError("Format email tidak valid atau bukan email asli!");
+      return;
+    }
+    if (loginMode === "register" && isDisposableEmail(loginEmail)) {
+      setLoginError(
+        "Email sementara/disposable tidak diizinkan. Gunakan email asli (mis. Gmail).",
+      );
       return;
     }
 
