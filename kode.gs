@@ -18,7 +18,9 @@ function doPost(e) {
     var modeSuffix = data.isDemoMode ? "_Demo" : "_DataAsli" + userIdentifier;
 
     // Helper: normalisasi email (lowercase + trim) agar perbandingan tidak case-sensitive
-    var emailNorm = String(data.email || "").toLowerCase().trim();
+    var emailNorm = String(data.email || "")
+      .toLowerCase()
+      .trim();
 
     // Helper: ambil semua baris dari sebuah sheet (skip header)
     function getSheetRows(s) {
@@ -30,22 +32,52 @@ function doPost(e) {
     function styleHeader(s, numCols, bgColor) {
       s.getRange(1, 1, 1, numCols)
         .setBackground(bgColor)
-        .setFontColor('#ffffff')
-        .setFontWeight('bold');
-      try { if (s.getFrozenRows() < 1) s.setFrozenRows(1); } catch(e) {}
+        .setFontColor("#ffffff")
+        .setFontWeight("bold");
+      try {
+        if (s.getFrozenRows() < 1) s.setFrozenRows(1);
+      } catch (e) {}
     }
 
     // Sheet lama (backward compat) — cek juga saat login/register agar akun lama tetap bisa masuk
-    var sUsersDemo  = sheet.getSheetByName("Users_Demo");
-    var sUsersAsli  = sheet.getSheetByName("Users_DataAsli");
-    var legacySheets = [sUsersDemo, sUsersAsli].filter(function(s) { return !!s; });
+    var sUsersDemo = sheet.getSheetByName("Users_Demo");
+    var sUsersAsli = sheet.getSheetByName("Users_DataAsli");
+    var legacySheets = [sUsersDemo, sUsersAsli].filter(function (s) {
+      return !!s;
+    });
+
+    // Migrasi akun dari sheet lama ke Users utama lalu hapus sheet lama
+    var legacyToMigrate = [sUsersDemo, sUsersAsli];
+    legacyToMigrate.forEach(function(ls) {
+      if (!ls || ls.getLastRow() < 2) {
+        if (ls && sheet.getSheets().length > 1) { try { sheet.deleteSheet(ls); } catch(e2) {} }
+        return;
+      }
+      var legRows = ls.getDataRange().getValues().slice(1);
+      var mainEmails = getSheetRows(sUsers).map(function(r) { return String(r[0]).toLowerCase().trim(); });
+      legRows.forEach(function(row) {
+        var em = String(row[0]).toLowerCase().trim();
+        if (em && mainEmails.indexOf(em) === -1) {
+          sUsers.appendRow([em, row[1], row[2] || "", row[3] || "", row[4] || "", row[5] || new Date().toISOString()]);
+          mainEmails.push(em);
+        }
+      });
+      if (sheet.getSheets().length > 1) { try { sheet.deleteSheet(ls); } catch(e2) {} }
+    });
 
     // ============================================
     // 1. FITUR AKUN (Register & Login & Update)
     // ============================================
     if (sUsers.getLastRow() === 0) {
-      sUsers.appendRow(["Email", "Password", "Name", "PhotoURL", "CoverURL", "Dibuat Sejak"]);
-      styleHeader(sUsers, 6, '#7c3aed');
+      sUsers.appendRow([
+        "Email",
+        "Password",
+        "Name",
+        "PhotoURL",
+        "CoverURL",
+        "Dibuat Sejak",
+      ]);
+      styleHeader(sUsers, 6, "#7c3aed");
     }
 
     if (data.action === "register") {
@@ -56,7 +88,10 @@ function doPost(e) {
         for (var i = 0; i < rows.length; i++) {
           if (String(rows[i][0]).toLowerCase().trim() === emailNorm) {
             return ContentService.createTextOutput(
-              JSON.stringify({ status: "error", message: "Email sudah terdaftar!" })
+              JSON.stringify({
+                status: "error",
+                message: "Email sudah terdaftar!",
+              }),
             ).setMimeType(ContentService.MimeType.JSON);
           }
         }
@@ -74,8 +109,13 @@ function doPost(e) {
         JSON.stringify({
           status: "success",
           message: "Pendaftaran berhasil!",
-          data: { email: emailNorm, name: data.name, photoURL: data.photoURL, coverUrl: data.coverUrl },
-        })
+          data: {
+            email: emailNorm,
+            name: data.name,
+            photoURL: data.photoURL,
+            coverUrl: data.coverUrl,
+          },
+        }),
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -94,14 +134,22 @@ function doPost(e) {
               JSON.stringify({
                 status: "success",
                 message: "Login berhasil!",
-                data: { email: rows[i][0], name: rows[i][2], photoURL: rows[i][3], coverUrl: rows[i][4] },
-              })
+                data: {
+                  email: rows[i][0],
+                  name: rows[i][2],
+                  photoURL: rows[i][3],
+                  coverUrl: rows[i][4],
+                },
+              }),
             ).setMimeType(ContentService.MimeType.JSON);
           }
         }
       }
       return ContentService.createTextOutput(
-        JSON.stringify({ status: "error", message: "Email/password salah atau belum terdaftar!" })
+        JSON.stringify({
+          status: "error",
+          message: "Email/password salah atau belum terdaftar!",
+        }),
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -118,7 +166,10 @@ function doPost(e) {
             targetSheet.getRange(i + 1, 4).setValue(data.photoURL);
             targetSheet.getRange(i + 1, 5).setValue(data.coverUrl);
             return ContentService.createTextOutput(
-              JSON.stringify({ status: "success", message: "Profile updated!" })
+              JSON.stringify({
+                status: "success",
+                message: "Profile updated!",
+              }),
             ).setMimeType(ContentService.MimeType.JSON);
           }
         }
@@ -129,10 +180,20 @@ function doPost(e) {
     // 2. LOG AKTIVITAS LOGIN
     // ============================================
     if (data.action === "saveLoginLog") {
-      var sLog = sheet.getSheetByName("Log_Login") || sheet.insertSheet("Log_Login");
+      var sLog =
+        sheet.getSheetByName("Log_Login") || sheet.insertSheet("Log_Login");
       if (sLog.getLastRow() === 0) {
-        sLog.appendRow(["Waktu", "Email", "IP Publik", "Kota", "Negara", "Perangkat/Browser", "Mode", "Status"]);
-        styleHeader(sLog, 8, '#1e40af');
+        sLog.appendRow([
+          "Waktu",
+          "Email",
+          "IP Publik",
+          "Kota",
+          "Negara",
+          "Perangkat/Browser",
+          "Mode",
+          "Status",
+        ]);
+        styleHeader(sLog, 8, "#1e40af");
       }
       sLog.appendRow([
         new Date().toLocaleString("id-ID"),
@@ -153,21 +214,27 @@ function doPost(e) {
     // 3. JADWAL ALARM DS3231 (Global — semua device berbagi sensor yang sama)
     // ============================================
     if (data.action === "saveSchedule") {
-      var sJadwal = sheet.getSheetByName("Jadwal_Alarm") || sheet.insertSheet("Jadwal_Alarm");
+      var sJadwal =
+        sheet.getSheetByName("Jadwal_Alarm") ||
+        sheet.insertSheet("Jadwal_Alarm");
       if (sJadwal.getLastRow() === 0) {
         sJadwal.appendRow(["Diperbarui", "OlehEmail", "JadwalJSON"]);
-        styleHeader(sJadwal, 3, '#b45309');
+        styleHeader(sJadwal, 3, "#b45309");
       }
       // Selalu overwrite baris data (baris 2) — hanya simpan versi terbaru
       if (sJadwal.getLastRow() < 2) {
-        sJadwal.appendRow([new Date().toLocaleString("id-ID"), data.email || "-", JSON.stringify(data.schedules || [])]);
+        sJadwal.appendRow([
+          new Date().toLocaleString("id-ID"),
+          data.email || "-",
+          JSON.stringify(data.schedules || []),
+        ]);
       } else {
         sJadwal.getRange(2, 1).setValue(new Date().toLocaleString("id-ID"));
         sJadwal.getRange(2, 2).setValue(data.email || "-");
         sJadwal.getRange(2, 3).setValue(JSON.stringify(data.schedules || []));
       }
       return ContentService.createTextOutput(
-        JSON.stringify({ status: "success", message: "Jadwal tersimpan!" })
+        JSON.stringify({ status: "success", message: "Jadwal tersimpan!" }),
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -175,14 +242,18 @@ function doPost(e) {
       var sJadwal = sheet.getSheetByName("Jadwal_Alarm");
       if (!sJadwal || sJadwal.getLastRow() < 2) {
         return ContentService.createTextOutput(
-          JSON.stringify({ status: "success", schedules: null })
+          JSON.stringify({ status: "success", schedules: null }),
         ).setMimeType(ContentService.MimeType.JSON);
       }
       var raw = sJadwal.getRange(2, 3).getValue();
       var parsed = [];
-      try { parsed = JSON.parse(raw); } catch(pe) { parsed = []; }
+      try {
+        parsed = JSON.parse(raw);
+      } catch (pe) {
+        parsed = [];
+      }
       return ContentService.createTextOutput(
-        JSON.stringify({ status: "success", schedules: parsed })
+        JSON.stringify({ status: "success", schedules: parsed }),
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -196,8 +267,14 @@ function doPost(e) {
           sheet.getSheetByName("Logs" + modeSuffix) ||
           sheet.insertSheet("Logs" + modeSuffix);
         sL.clear();
-        sL.appendRow(["ID","Waktu","Sumber Node","Aksi Deteksi","TimestampISO"]);
-        styleHeader(sL, 5, '#be123c');
+        sL.appendRow([
+          "ID",
+          "Waktu",
+          "Sumber Node",
+          "Aksi Deteksi",
+          "TimestampISO",
+        ]);
+        styleHeader(sL, 5, "#be123c");
 
         var rL = data.logs.map((l) => [
           l.id,
@@ -216,8 +293,15 @@ function doPost(e) {
           sheet.getSheetByName("Status" + modeSuffix) ||
           sheet.insertSheet("Status" + modeSuffix);
         sS.clear();
-        sS.appendRow(["Nama Node","Total","Status","Baterai","Tegangan","LED"]);
-        styleHeader(sS, 6, '#047857');
+        sS.appendRow([
+          "Nama Node",
+          "Total",
+          "Status",
+          "Baterai",
+          "Tegangan",
+          "LED",
+        ]);
+        styleHeader(sS, 6, "#047857");
         sS.getRange(2, 1, 2, 6).setValues([
           [
             "Node A (365nm)",
@@ -245,7 +329,7 @@ function doPost(e) {
           sheet.insertSheet("Ringkasan" + modeSuffix);
         sRing.clear();
         sRing.appendRow(["Parameter", "Nilai"]);
-        styleHeader(sRing, 2, '#4338ca');
+        styleHeader(sRing, 2, "#4338ca");
         sRing.getRange(2, 1, 2, 2).setValues([
           ["Node A (365nm)", data.nodeA.uv365],
           ["Node B (395nm)", data.nodeB.uv395],
@@ -263,19 +347,29 @@ function doPost(e) {
           sheet.insertSheet("Grafik" + modeSuffix);
         sC.clear();
         sC.appendRow(["Waktu (Titik)", "Node A (365nm)", "Node B (395nm)"]);
-        styleHeader(sC, 3, '#1d4ed8');
+        styleHeader(sC, 3, "#1d4ed8");
         var rC = data.chartData.map((c) => [c.time, c.NodeA, c.NodeB]);
         if (rC.length > 0) sC.getRange(2, 1, rC.length, 3).setValues(rC);
       }
 
       // Simpan data Suhu & Kelembaban DHT22 — append dengan dedup berbasis Timestamp_ms
-      if (data.action === "syncData" && data.lingkunganData && data.lingkunganData.length > 0) {
+      if (
+        data.action === "syncData" &&
+        data.lingkunganData &&
+        data.lingkunganData.length > 0
+      ) {
         var sLing =
           sheet.getSheetByName("Lingkungan" + modeSuffix) ||
           sheet.insertSheet("Lingkungan" + modeSuffix);
         if (sLing.getLastRow() === 0) {
-          sLing.appendRow(["Waktu", "Node", "Suhu (°C)", "Kelembaban (%)", "Timestamp_ms"]);
-          styleHeader(sLing, 5, '#0e7490');
+          sLing.appendRow([
+            "Waktu",
+            "Node",
+            "Suhu (°C)",
+            "Kelembaban (%)",
+            "Timestamp_ms",
+          ]);
+          styleHeader(sLing, 5, "#0e7490");
         } else {
           // Perbaiki header kolom E jika sheet lama (sebelum Timestamp_ms ditambahkan)
           var headerE = sLing.getRange(1, 5).getValue();
@@ -286,19 +380,58 @@ function doPost(e) {
         var existingLingRows = sLing.getDataRange().getValues();
         var existingTs = {};
         for (var ei = 1; ei < existingLingRows.length; ei++) {
-          if (existingLingRows[ei][4]) existingTs[String(existingLingRows[ei][4])] = true;
+          if (existingLingRows[ei][4])
+            existingTs[String(existingLingRows[ei][4])] = true;
         }
 
-        var rLing = data.lingkunganData.filter(function(d) {
-          return !existingTs[String(d.timestamp)];
-        }).map(function(d) {
-          return [new Date(d.timestamp).toLocaleString("id-ID"), d.node, d.temp, d.humidity, d.timestamp];
-        });
+        var rLing = data.lingkunganData
+          .filter(function (d) {
+            return !existingTs[String(d.timestamp)];
+          })
+          .map(function (d) {
+            return [
+              new Date(d.timestamp).toLocaleString("id-ID"),
+              d.node,
+              d.temp,
+              d.humidity,
+              d.timestamp,
+            ];
+          });
 
         if (rLing.length > 0) {
-          sLing.getRange(sLing.getLastRow() + 1, 1, rLing.length, 5).setValues(rLing);
+          sLing
+            .getRange(sLing.getLastRow() + 1, 1, rLing.length, 5)
+            .setValues(rLing);
         }
       }
+
+      // ── Refresh warna header semua sheet yang ada ─────────────────────────
+      (function() {
+        var colorMap = [
+          { re: /^Users$|^Users_DataAsli$|^Users_Demo$/, cols: 6, color: "#7c3aed" },
+          { re: /^Log_Login$/, cols: 8, color: "#1e40af" },
+          { re: /^Jadwal_Alarm$/, cols: 3, color: "#b45309" },
+          { re: /^Logs_/, cols: 5, color: "#be123c" },
+          { re: /^Status_/, cols: 6, color: "#047857" },
+          { re: /^Ringkasan_/, cols: 2, color: "#4338ca" },
+          { re: /^[Gg]rafik_/, cols: 3, color: "#1d4ed8" },
+          { re: /^Lingkungan_/, cols: 5, color: "#0e7490" },
+          { re: /^RataRataLingkungan_|^RataRata_/, cols: 6, color: "#0f766e" },
+        ];
+        sheet.getSheets().forEach(function(s) {
+          if (s.getLastRow() < 1) return;
+          var n = s.getName();
+          for (var ci = 0; ci < colorMap.length; ci++) {
+            if (colorMap[ci].re.test(n)) {
+              try {
+                var curBg = s.getRange(1, 1).getBackground();
+                if (curBg !== colorMap[ci].color) styleHeader(s, colorMap[ci].cols, colorMap[ci].color);
+              } catch(eS) {}
+              break;
+            }
+          }
+        });
+      })();
 
       // ============================================
       // JIKA INI AKSI FETCH, MAKA KEMBALIKAN DATA DARI SHEET USER TERSEBUT
@@ -409,12 +542,18 @@ function doPost(e) {
           }
           var lRowLing = sLing_f.getLastRow();
           if (lRowLing > 1) {
-            var allLingRaw = sLing_f.getRange(2, 1, lRowLing - 1, 5).getValues();
-            var validLingRaw = allLingRaw.filter(function(r) { return !!r[4]; });
+            var allLingRaw = sLing_f
+              .getRange(2, 1, lRowLing - 1, 5)
+              .getValues();
+            var validLingRaw = allLingRaw.filter(function (r) {
+              return !!r[4];
+            });
             if (validLingRaw.length < allLingRaw.length) {
               sLing_f.getRange(2, 1, lRowLing - 1, 5).clearContent();
               if (validLingRaw.length > 0) {
-                sLing_f.getRange(2, 1, validLingRaw.length, 5).setValues(validLingRaw);
+                sLing_f
+                  .getRange(2, 1, validLingRaw.length, 5)
+                  .setValues(validLingRaw);
               }
             }
           }
@@ -422,7 +561,9 @@ function doPost(e) {
 
         var ObjectLingkungan = [];
         if (sLing_f && sLing_f.getLastRow() > 1) {
-          var rawLing_f = sLing_f.getRange(2, 1, sLing_f.getLastRow() - 1, 5).getValues();
+          var rawLing_f = sLing_f
+            .getRange(2, 1, sLing_f.getLastRow() - 1, 5)
+            .getValues();
           for (var i = 0; i < rawLing_f.length; i++) {
             var ts_f = rawLing_f[i][4];
             if (ts_f) {
@@ -437,31 +578,73 @@ function doPost(e) {
         }
 
         // ── Hitung rata-rata per node ─────────────────────────────────────────
-        var aT = [], aH = [], bT = [], bH = [];
+        var aT = [],
+          aH = [],
+          bT = [],
+          bH = [];
         for (var ri = 0; ri < ObjectLingkungan.length; ri++) {
           var rl = ObjectLingkungan[ri];
-          if (rl.node === 'A') { aT.push(rl.temp); aH.push(rl.humidity); }
-          else if (rl.node === 'B') { bT.push(rl.temp); bH.push(rl.humidity); }
+          if (rl.node === "A") {
+            aT.push(rl.temp);
+            aH.push(rl.humidity);
+          } else if (rl.node === "B") {
+            bT.push(rl.temp);
+            bH.push(rl.humidity);
+          }
         }
         function avgArr(arr) {
           if (!arr.length) return null;
-          return Math.round(arr.reduce(function(a,b){return a+b;},0) / arr.length * 10) / 10;
+          return (
+            Math.round(
+              (arr.reduce(function (a, b) {
+                return a + b;
+              }, 0) /
+                arr.length) *
+                10,
+            ) / 10
+          );
         }
         var rataRata = {
           A: { temp: avgArr(aT), hum: avgArr(aH), count: aT.length },
-          B: { temp: avgArr(bT), hum: avgArr(bH), count: bT.length }
+          B: { temp: avgArr(bT), hum: avgArr(bH), count: bT.length },
         };
 
-        // ── Simpan rata-rata ke sheet RataRata (baris 2 selalu diperbarui) ────
-        var sRata = sheet.getSheetByName("RataRata" + modeSuffix);
-        if (!sRata) sRata = sheet.insertSheet("RataRata" + modeSuffix);
-        if (sRata.getLastRow() === 0) {
-          sRata.appendRow(["Waktu Update","Avg Suhu A (°C)","Avg Hum A (%)","Avg Suhu B (°C)","Avg Hum B (%)","Total Data"]);
-          styleHeader(sRata, 6, '#0f766e');
+        // ── Simpan rata-rata ke sheet RataRataLingkungan (baris 2 selalu diperbarui) ────
+        var sRata = sheet.getSheetByName("RataRataLingkungan" + modeSuffix);
+        if (!sRata) {
+          // Migrasi dari nama lama jika ada
+          var sRataOld = sheet.getSheetByName("RataRata" + modeSuffix);
+          if (sRataOld) {
+            sRataOld.setName("RataRataLingkungan" + modeSuffix);
+            sRata = sRataOld;
+          } else {
+            sRata = sheet.insertSheet("RataRataLingkungan" + modeSuffix);
+          }
         }
-        var rataRow = [new Date().toLocaleString("id-ID"), rataRata.A.temp, rataRata.A.hum, rataRata.B.temp, rataRata.B.hum, ObjectLingkungan.length];
-        if (sRata.getLastRow() <= 1) { sRata.appendRow(rataRow); }
-        else { sRata.getRange(2, 1, 1, 6).setValues([rataRow]); }
+        if (sRata.getLastRow() === 0) {
+          sRata.appendRow([
+            "Waktu Update",
+            "Avg Suhu A (°C)",
+            "Avg Hum A (%)",
+            "Avg Suhu B (°C)",
+            "Avg Hum B (%)",
+            "Total Data",
+          ]);
+          styleHeader(sRata, 6, "#0f766e");
+        }
+        var rataRow = [
+          new Date().toLocaleString("id-ID"),
+          rataRata.A.temp,
+          rataRata.A.hum,
+          rataRata.B.temp,
+          rataRata.B.hum,
+          ObjectLingkungan.length,
+        ];
+        if (sRata.getLastRow() <= 1) {
+          sRata.appendRow(rataRow);
+        } else {
+          sRata.getRange(2, 1, 1, 6).setValues([rataRow]);
+        }
 
         return ContentService.createTextOutput(
           JSON.stringify({
@@ -491,19 +674,28 @@ function doPost(e) {
     if (data.action === "scanSheets") {
       var allSheets = sheet.getSheets();
       var validPrefixes = [
-        "Users_Demo", "Users_DataAsli",
-        "Logs_Demo", "Logs_DataAsli_",
-        "Status_Demo", "Status_DataAsli_",
-        "Grafik_Demo", "Grafik_DataAsli_",
-        "Ringkasan_Demo", "Ringkasan_DataAsli_",
-        "Lingkungan_Demo", "Lingkungan_DataAsli_",
-        "Jadwal_Alarm", "Log_Login"
+        "Users",
+        "Logs_Demo",
+        "Logs_DataAsli_",
+        "Status_Demo",
+        "Status_DataAsli_",
+        "Grafik_Demo",
+        "grafik_Demo",
+        "Grafik_DataAsli_",
+        "Ringkasan_Demo",
+        "Ringkasan_DataAsli_",
+        "Lingkungan_Demo",
+        "Lingkungan_DataAsli_",
+        "RataRataLingkungan_Demo",
+        "RataRataLingkungan_DataAsli_",
+        "Jadwal_Alarm",
+        "Log_Login",
       ];
       var usedSheets = [];
       var unusedSheets = [];
-      allSheets.forEach(function(s) {
+      allSheets.forEach(function (s) {
         var name = s.getName();
-        var isUsed = validPrefixes.some(function(p) {
+        var isUsed = validPrefixes.some(function (p) {
           return name === p || name.indexOf(p) === 0;
         });
         if (isUsed) {
@@ -513,25 +705,37 @@ function doPost(e) {
         }
       });
       return ContentService.createTextOutput(
-        JSON.stringify({ status: "success", data: { used: usedSheets, unused: unusedSheets } })
+        JSON.stringify({
+          status: "success",
+          data: { used: usedSheets, unused: unusedSheets },
+        }),
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (data.action === "deleteSheets") {
       var toDelete = data.sheetNames || [];
       var validPrefixes = [
-        "Users_Demo", "Users_DataAsli",
-        "Logs_Demo", "Logs_DataAsli_",
-        "Status_Demo", "Status_DataAsli_",
-        "Grafik_Demo", "Grafik_DataAsli_",
-        "Ringkasan_Demo", "Ringkasan_DataAsli_",
-        "Lingkungan_Demo", "Lingkungan_DataAsli_",
-        "Jadwal_Alarm", "Log_Login"
+        "Users",
+        "Logs_Demo",
+        "Logs_DataAsli_",
+        "Status_Demo",
+        "Status_DataAsli_",
+        "Grafik_Demo",
+        "grafik_Demo",
+        "Grafik_DataAsli_",
+        "Ringkasan_Demo",
+        "Ringkasan_DataAsli_",
+        "Lingkungan_Demo",
+        "Lingkungan_DataAsli_",
+        "RataRataLingkungan_Demo",
+        "RataRataLingkungan_DataAsli_",
+        "Jadwal_Alarm",
+        "Log_Login",
       ];
       var deleted = [];
       var failed = [];
-      toDelete.forEach(function(name) {
-        var isProtected = validPrefixes.some(function(p) {
+      toDelete.forEach(function (name) {
+        var isProtected = validPrefixes.some(function (p) {
           return name === p || name.indexOf(p) === 0;
         });
         if (isProtected) {
@@ -549,7 +753,10 @@ function doPost(e) {
         }
       });
       return ContentService.createTextOutput(
-        JSON.stringify({ status: "success", data: { deleted: deleted, failed: failed } })
+        JSON.stringify({
+          status: "success",
+          data: { deleted: deleted, failed: failed },
+        }),
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -572,19 +779,29 @@ function scanUnusedSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var allSheets = ss.getSheets();
   var validPrefixes = [
-    "Users_Demo", "Users_DataAsli",
-    "Logs_Demo", "Logs_DataAsli_",
-    "Status_Demo", "Status_DataAsli_",
-    "Grafik_Demo", "Grafik_DataAsli_",
-    "Ringkasan_Demo", "Ringkasan_DataAsli_",
-    "Lingkungan_Demo", "Lingkungan_DataAsli_",
-    "Jadwal_Alarm", "Log_Login"
+    "Users",
+    "Users_Demo",
+    "Users_DataAsli",
+    "Logs_Demo",
+    "Logs_DataAsli_",
+    "Status_Demo",
+    "Status_DataAsli_",
+    "Grafik_Demo",
+    "Grafik_DataAsli_",
+    "Ringkasan_Demo",
+    "Ringkasan_DataAsli_",
+    "Lingkungan_Demo",
+    "Lingkungan_DataAsli_",
+    "RataRata_Demo",
+    "RataRata_DataAsli_",
+    "Jadwal_Alarm",
+    "Log_Login",
   ];
   var unusedSheets = [];
   var usedSheets = [];
-  allSheets.forEach(function(s) {
+  allSheets.forEach(function (s) {
     var name = s.getName();
-    var isUsed = validPrefixes.some(function(p) {
+    var isUsed = validPrefixes.some(function (p) {
       return name === p || name.indexOf(p) === 0;
     });
     if (isUsed) {
@@ -594,12 +811,16 @@ function scanUnusedSheets() {
     }
   });
   Logger.log("=== SHEET TERPAKAI (" + usedSheets.length + ") ===");
-  usedSheets.forEach(function(n) { Logger.log("✅ " + n); });
+  usedSheets.forEach(function (n) {
+    Logger.log("✅ " + n);
+  });
   Logger.log("=== SHEET TIDAK TERPAKAI (" + unusedSheets.length + ") ===");
   if (unusedSheets.length === 0) {
     Logger.log("(Kosong — semua sheet sudah terpakai sistem)");
   } else {
-    unusedSheets.forEach(function(s) { Logger.log("❌ " + s.name + " | baris: " + s.rows); });
+    unusedSheets.forEach(function (s) {
+      Logger.log("❌ " + s.name + " | baris: " + s.rows);
+    });
   }
   return { used: usedSheets, unused: unusedSheets };
 }
@@ -609,18 +830,24 @@ function deleteUnusedSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var result = scanUnusedSheets();
   if (result.unused.length === 0) {
-    SpreadsheetApp.getUi().alert("Tidak ada sheet yang perlu dihapus. Semua sheet sudah terpakai!");
+    SpreadsheetApp.getUi().alert(
+      "Tidak ada sheet yang perlu dihapus. Semua sheet sudah terpakai!",
+    );
     return;
   }
-  var names = result.unused.map(function(s) { return "• " + s.name + " (" + s.rows + " baris)"; }).join("\n");
+  var names = result.unused
+    .map(function (s) {
+      return "• " + s.name + " (" + s.rows + " baris)";
+    })
+    .join("\n");
   var response = SpreadsheetApp.getUi().alert(
     "Konfirmasi Hapus Sheet",
     "Sheet berikut akan dihapus permanen:\n\n" + names + "\n\nLanjutkan?",
-    SpreadsheetApp.getUi().ButtonSet.YES_NO
+    SpreadsheetApp.getUi().ButtonSet.YES_NO,
   );
   if (response === SpreadsheetApp.getUi().Button.YES) {
     var count = 0;
-    result.unused.forEach(function(s) {
+    result.unused.forEach(function (s) {
       var sheet = ss.getSheetByName(s.name);
       if (sheet && ss.getSheets().length > 1) {
         ss.deleteSheet(sheet);
@@ -628,7 +855,9 @@ function deleteUnusedSheets() {
         Logger.log("Dihapus: " + s.name);
       }
     });
-    SpreadsheetApp.getUi().alert("Selesai! " + count + " sheet berhasil dihapus.");
+    SpreadsheetApp.getUi().alert(
+      "Selesai! " + count + " sheet berhasil dihapus.",
+    );
   } else {
     Logger.log("Penghapusan dibatalkan oleh pengguna.");
   }
