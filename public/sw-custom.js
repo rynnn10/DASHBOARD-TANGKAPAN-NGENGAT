@@ -1,6 +1,6 @@
 // Custom Service Worker — notifikasi background & periodic check
 // File ini di-import oleh generated Workbox SW via importScripts()
-// Terakhir diperbarui: Rabu, 24 Juni 2026 20:15 WIB
+// Terakhir diperbarui: Rabu, 24 Juni 2026 22:45 WIB
 
 var SW_CACHE = 'ngengat-sw-config-v1';
 

@@ -1,6 +1,6 @@
 // ============================================================
 // Backend Google Apps Script — Dashboard Tangkapan Ngengat
-// Terakhir diperbarui: Rabu, 24 Juni 2026 20:15 WIB
+// Terakhir diperbarui: Rabu, 24 Juni 2026 22:45 WIB
 // ============================================================
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -182,6 +182,17 @@ function doPost(e) {
       s.getRange(s.getLastRow() + 1, 1, tagged.length, tagged[0].length).setValues(
         tagged,
       );
+    }
+
+    // Sisipkan baris milik user TEPAT DI BAWAH HEADER (baris 2) → data terbaru di atas.
+    // `rows` HARUS sudah urut top-down (paling baru lebih dulu): rows[0] jadi baris 2.
+    function prependUserRows(s, name, email, rows) {
+      if (!rows || !rows.length) return;
+      var tagged = rows.map(function (r) {
+        return [name, email].concat(r);
+      });
+      s.insertRowsAfter(1, tagged.length);
+      s.getRange(2, 1, tagged.length, tagged[0].length).setValues(tagged);
     }
 
     // Baca baris milik email; kembalikan kolom asli (tanpa 2 kolom depan)
@@ -635,7 +646,7 @@ function doPost(e) {
         ]);
         styleHeader(sLog, 8, "#1e40af");
       }
-      sLog.appendRow([
+      var logLoginRow = [
         new Date().toLocaleString("id-ID"),
         data.email || "-",
         data.ip || "-",
@@ -644,7 +655,10 @@ function doPost(e) {
         data.userAgent || "-",
         data.isDemoMode ? "Demo" : "Asli",
         data.status || "success",
-      ]);
+      ];
+      // Sisipkan login terbaru di baris 2 (paling atas) bukan di bawah
+      sLog.insertRowsAfter(1, 1);
+      sLog.getRange(2, 1, 1, logLoginRow.length).setValues([logLoginRow]);
       return ContentService.createTextOutput(
         JSON.stringify({ status: "success", message: "Login log tersimpan!" }),
       ).setMimeType(ContentService.MimeType.JSON);
@@ -722,6 +736,10 @@ function doPost(e) {
             l.timestamp,
           ];
         });
+        // Urutkan terbaru → lama (kolom 5 = timestamp ms) agar data baru di atas
+        rL.sort(function (a, b) {
+          return Number(b[4]) - Number(a[4]);
+        });
         appendUserRows(sL, partName, partEmail, rL);
       }
 
@@ -776,9 +794,11 @@ function doPost(e) {
           "#1d4ed8",
         );
         deleteUserRows(sC, partEmail);
-        var rC = data.chartData.map(function (c) {
-          return [c.time, c.NodeA, c.NodeB];
-        });
+        var rC = data.chartData
+          .map(function (c) {
+            return [c.time, c.NodeA, c.NodeB];
+          })
+          .reverse(); // chartData kronologis → balik agar titik terbaru di atas
         appendUserRows(sC, partName, partEmail, rC);
       }
 
@@ -819,7 +839,11 @@ function doPost(e) {
               d.timestamp,
             ];
           });
-        appendUserRows(sLing, partName, partEmail, rLing);
+        // Terbaru → lama (kolom 5 = timestamp ms), lalu sisipkan di atas (baris 2)
+        rLing.sort(function (a, b) {
+          return Number(b[4]) - Number(a[4]);
+        });
+        prependUserRows(sLing, partName, partEmail, rLing);
       }
 
       // ── Refresh warna header semua sheet yang ada ─────────────────────────

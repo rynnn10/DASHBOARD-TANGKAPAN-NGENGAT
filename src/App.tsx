@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Rabu, 24 Juni 2026 20:15 WIB
+// Terakhir diperbarui: Rabu, 24 Juni 2026 22:45 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -82,6 +82,33 @@ const safeParseDate = (dateStr: any) => {
 };
 
 const SCRIPT_URL = import.meta.env.VITE_GAS_URL || "";
+
+// POST ke GAS dengan auto-retry — atasi "gagal menghubungi server" akibat cold
+// start Apps Script (request pertama lambat / sempat balas non-JSON). Coba ulang
+// beberapa kali dengan jeda sebelum benar-benar dianggap gagal.
+async function postWithRetry(
+  body: any,
+  retries = 2,
+  delayMs = 1500,
+): Promise<any> {
+  let lastErr: any = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(body),
+      });
+      // .json() bisa melempar jika GAS balas HTML error saat baru bangun
+      return await response.json();
+    } catch (e) {
+      lastErr = e;
+      if (attempt < retries)
+        await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -812,7 +839,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Rabu, 24 Juni 2026 20:15 WIB";
+const LAST_UPDATED = "Rabu, 24 Juni 2026 22:45 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -2476,18 +2503,13 @@ export default function App() {
     try {
       if (loginMode === "register") {
         // Daftar: kirim OTP dulu ke email (verifikasi email benar-benar ada)
-        const response = await fetch(SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "sendOtp",
-            email: loginEmail.trim().toLowerCase(),
-            name: loginName,
-            forceRegister: force,
-            isDemoMode: pendingRealMode ? false : isDemoMode,
-          }),
+        const result = await postWithRetry({
+          action: "sendOtp",
+          email: loginEmail.trim().toLowerCase(),
+          name: loginName,
+          forceRegister: force,
+          isDemoMode: pendingRealMode ? false : isDemoMode,
         });
-        const result = await response.json();
         if (result.status === "otp_sent") {
           setOtpForce(force);
           setOtpCode("");
@@ -2503,17 +2525,12 @@ export default function App() {
         }
       } else {
         // Login
-        const response = await fetch(SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "login",
-            email: loginEmail.trim().toLowerCase(),
-            password: loginPassword,
-            isDemoMode: pendingRealMode ? false : isDemoMode,
-          }),
+        const result = await postWithRetry({
+          action: "login",
+          email: loginEmail.trim().toLowerCase(),
+          password: loginPassword,
+          isDemoMode: pendingRealMode ? false : isDemoMode,
         });
-        const result = await response.json();
         if (result.status === "success") {
           finishAuthSuccess(result);
         } else {
@@ -2522,7 +2539,7 @@ export default function App() {
       }
     } catch (e: any) {
       setLoginError(
-        "Gagal menghubungi server. Pastikan koneksi internet aktif dan Google Script URL valid.",
+        "Gagal menghubungi server setelah beberapa percobaan. Periksa koneksi internet, lalu coba lagi.",
       );
     } finally {
       setIsAuthLoading(false);
