@@ -1038,6 +1038,12 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [nameExistsPrompt, setNameExistsPrompt] = useState<string | null>(null);
+  // Verifikasi OTP email saat daftar
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [otpInfo, setOtpInfo] = useState("");
+  const [otpForce, setOtpForce] = useState(false);
   const [loginName, setLoginName] = useState("");
   const [loginPhoto, setLoginPhoto] = useState("");
   const [loginCover, setLoginCover] = useState("");
@@ -2459,62 +2465,151 @@ export default function App() {
 
     setIsAuthLoading(true);
     try {
-      const response = await fetch(SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          action: loginMode,
-          email: loginEmail.trim().toLowerCase(),
-          password: loginPassword,
-          name: loginMode === "register" ? loginName : undefined,
-          photoURL: loginMode === "register" ? loginPhoto : undefined,
-          coverUrl: loginMode === "register" ? loginCover : undefined,
-          forceRegister: force,
-          // Saat auth dipicu peralihan ke Mode Asli, isDemoMode state masih true
-          // (baru di-set false setelah sukses). Kirim false agar Tipe = Asli.
-          isDemoMode: pendingRealMode ? false : isDemoMode,
-        }),
-      });
-      const result = await response.json();
-      if (result.status === "success") {
-        const normalizedEmail = loginEmail.trim().toLowerCase();
-        const profile = {
-          displayName: result.data
-            ? result.data.name || normalizedEmail.split("@")[0]
-            : normalizedEmail.split("@")[0],
-          email: normalizedEmail,
-          photoURL: result.data ? result.data.photoURL || "" : "",
-          coverUrl: result.data ? result.data.coverUrl || "" : "",
-        };
-        // Simpan profil & localStorage LANGSUNG — tidak menunggu animasi selesai
-        // agar refresh halaman sebelum timer tidak menyebabkan logout
-        setUserProfile(profile);
-        try {
-          localStorage.setItem("userProfile", JSON.stringify(profile));
-        } catch {
-          // localStorage bisa diblokir di mode privat atau browser dengan privacy ketat
+      if (loginMode === "register") {
+        // Daftar: kirim OTP dulu ke email (verifikasi email benar-benar ada)
+        const response = await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "sendOtp",
+            email: loginEmail.trim().toLowerCase(),
+            name: loginName,
+            forceRegister: force,
+            isDemoMode: pendingRealMode ? false : isDemoMode,
+          }),
+        });
+        const result = await response.json();
+        if (result.status === "otp_sent") {
+          setOtpForce(force);
+          setOtpCode("");
+          setOtpError("");
+          setOtpInfo(result.message || "Kode OTP telah dikirim ke email Anda.");
+          setOtpStep(true);
+        } else if (result.status === "name_exists") {
+          setNameExistsPrompt(
+            result.message || "Nama tersebut sudah dipakai. Mungkin Anda ingin login?",
+          );
+        } else {
+          setLoginError(result.message || "Gagal mengirim kode OTP.");
         }
-        // Jika login dipicu oleh switch ke Mode Asli, terapkan sekarang
-        if (pendingRealMode) {
-          setIsDemoMode(false);
-          localStorage.setItem("isDemoMode", "false");
-          setPendingRealMode(false);
-        }
-        setLoginSuccess(true);
-        // Kirim log aktivitas login secara async (tidak blokir UX)
-        logLoginActivity(loginEmail, pendingRealMode ? false : isDemoMode);
-      } else if (result.status === "name_exists") {
-        // Nama sudah dipakai — tampilkan konfirmasi (login / tetap daftar)
-        setNameExistsPrompt(
-          result.message || "Nama tersebut sudah dipakai. Mungkin Anda ingin login?",
-        );
       } else {
-        setLoginError(result.message || "Email atau password salah.");
+        // Login
+        const response = await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "login",
+            email: loginEmail.trim().toLowerCase(),
+            password: loginPassword,
+            isDemoMode: pendingRealMode ? false : isDemoMode,
+          }),
+        });
+        const result = await response.json();
+        if (result.status === "success") {
+          finishAuthSuccess(result);
+        } else {
+          setLoginError(result.message || "Email atau password salah.");
+        }
       }
     } catch (e: any) {
       setLoginError(
         "Gagal menghubungi server. Pastikan koneksi internet aktif dan Google Script URL valid.",
       );
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Terapkan hasil auth sukses (dipakai login & daftar setelah OTP terverifikasi)
+  const finishAuthSuccess = (result: any) => {
+    const normalizedEmail = loginEmail.trim().toLowerCase();
+    const profile = {
+      displayName: result.data
+        ? result.data.name || normalizedEmail.split("@")[0]
+        : loginName || normalizedEmail.split("@")[0],
+      email: normalizedEmail,
+      photoURL: result.data ? result.data.photoURL || "" : "",
+      coverUrl: result.data ? result.data.coverUrl || "" : "",
+    };
+    setUserProfile(profile);
+    try {
+      localStorage.setItem("userProfile", JSON.stringify(profile));
+    } catch {
+      // localStorage bisa diblokir di mode privat
+    }
+    if (pendingRealMode) {
+      setIsDemoMode(false);
+      localStorage.setItem("isDemoMode", "false");
+      setPendingRealMode(false);
+    }
+    setOtpStep(false);
+    setLoginSuccess(true);
+    logLoginActivity(loginEmail, pendingRealMode ? false : isDemoMode);
+  };
+
+  // Verifikasi OTP lalu buat akun
+  const submitOtp = async () => {
+    if (!otpCode || otpCode.trim().length < 6) {
+      setOtpError("Masukkan 6 digit kode OTP yang dikirim ke email Anda.");
+      return;
+    }
+    setOtpError("");
+    setIsAuthLoading(true);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "register",
+          email: loginEmail.trim().toLowerCase(),
+          password: loginPassword,
+          name: loginName,
+          photoURL: loginPhoto,
+          coverUrl: loginCover,
+          otp: otpCode.trim(),
+          forceRegister: otpForce,
+          isDemoMode: pendingRealMode ? false : isDemoMode,
+        }),
+      });
+      const result = await response.json();
+      if (result.status === "success") {
+        finishAuthSuccess(result);
+      } else if (result.status === "otp_invalid") {
+        setOtpError(result.message || "Kode OTP salah atau sudah kadaluarsa.");
+      } else {
+        setOtpError(result.message || "Gagal mendaftar. Coba lagi.");
+      }
+    } catch {
+      setOtpError("Gagal menghubungi server. Periksa koneksi internet Anda.");
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Kirim ulang kode OTP
+  const resendOtp = async () => {
+    setOtpError("");
+    setIsAuthLoading(true);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "sendOtp",
+          email: loginEmail.trim().toLowerCase(),
+          name: loginName,
+          forceRegister: otpForce,
+          isDemoMode: pendingRealMode ? false : isDemoMode,
+        }),
+      });
+      const result = await response.json();
+      if (result.status === "otp_sent") {
+        setOtpInfo(result.message || "Kode OTP dikirim ulang.");
+      } else {
+        setOtpError(result.message || "Gagal mengirim ulang OTP.");
+      }
+    } catch {
+      setOtpError("Gagal menghubungi server.");
     } finally {
       setIsAuthLoading(false);
     }
@@ -3305,21 +3400,21 @@ export default function App() {
                     <PieChart className="w-5 h-5 text-emerald-500" />
                     Fluktuasi Waktu Kedatangan
                   </h3>
-                  <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-auto sm:items-end">
+                  <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-fit">
                     {timeRange === "kustom" ? (
-                      <div className="flex gap-1.5 items-center w-full sm:w-auto">
+                      <div className="flex gap-1.5 items-center w-full">
                         <input type="date" value={catchCustomStart} onChange={e => setCatchCustomStart(e.target.value)}
-                          className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="flex-1 min-w-0 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                         <span className="text-gray-400 text-xs flex-shrink-0">–</span>
                         <input type="date" value={catchCustomEnd} onChange={e => setCatchCustomEnd(e.target.value)}
-                          className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="flex-1 min-w-0 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                       </div>
                     ) : (
                       <select
                         aria-label="Pilih rentang waktu grafik"
                         value={timeDuration}
                         onChange={(e) => setTimeDuration(e.target.value)}
-                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
                       >
                         {timeRange === "hari" && (
                           <>
@@ -3454,21 +3549,21 @@ export default function App() {
                       UV 365nm (Node A) vs UV 395nm (Node B)
                     </p>
                   </div>
-                  <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-auto sm:items-end">
+                  <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-fit">
                     {effectTimeRange === "kustom" ? (
-                      <div className="flex gap-1.5 items-center w-full sm:w-auto">
+                      <div className="flex gap-1.5 items-center w-full">
                         <input type="date" value={effectCustomStart} onChange={e => setEffectCustomStart(e.target.value)}
-                          className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="flex-1 min-w-0 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                         <span className="text-gray-400 text-xs flex-shrink-0">–</span>
                         <input type="date" value={effectCustomEnd} onChange={e => setEffectCustomEnd(e.target.value)}
-                          className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
+                          className="flex-1 min-w-0 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-emerald-500 focus:border-emerald-500" />
                       </div>
                     ) : (
                       <select
                         aria-label="Pilih rentang waktu perbandingan"
                         value={effectTimeDuration}
                         onChange={(e) => setEffectTimeDuration(e.target.value)}
-                        className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none"
                       >
                         {effectTimeRange === "hari" && (
                           <>
@@ -3630,21 +3725,21 @@ export default function App() {
                   <Wind className="w-5 h-5 text-cyan-500" />
                   Grafik Suhu &amp; Kelembaban
                 </h3>
-                <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-auto sm:items-end">
+                <div className="flex flex-col gap-1.5 items-stretch w-full sm:w-fit">
                   {dhtTimeRange === "kustom" ? (
                     <div className="flex gap-1.5 items-center w-full sm:w-auto">
                       <input type="date" value={dhtCustomStart} onChange={e => setDhtCustomStart(e.target.value)}
-                        className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
+                        className="flex-1 min-w-0 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
                       <span className="text-gray-400 text-xs flex-shrink-0">–</span>
                       <input type="date" value={dhtCustomEnd} onChange={e => setDhtCustomEnd(e.target.value)}
-                        className="flex-1 min-w-0 sm:flex-initial bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
+                        className="flex-1 min-w-0 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg p-1.5 outline-none focus:ring-cyan-500 focus:border-cyan-500" />
                     </div>
                   ) : (
                     <select
                       aria-label="Pilih rentang waktu grafik suhu"
                       value={dhtTimeDuration}
                       onChange={(e) => setDhtTimeDuration(e.target.value)}
-                      className="w-full sm:w-auto bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
+                      className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 p-1.5 outline-none"
                     >
                       {dhtTimeRange === "hari" && (
                         <>
@@ -6024,6 +6119,10 @@ export default function App() {
                 if (!loginSuccess && e.target === e.currentTarget) {
                   setLoginModalOpen(false);
                   setPendingRealMode(false);
+                  setOtpStep(false);
+                  setOtpCode("");
+                  setOtpError("");
+                  setNameExistsPrompt(null);
                 }
               }}
             >
@@ -6037,7 +6136,7 @@ export default function App() {
                     </h3>
                     <button
                       aria-label="Tutup"
-                      onClick={() => { setLoginModalOpen(false); setPendingRealMode(false); }}
+                      onClick={() => { setLoginModalOpen(false); setPendingRealMode(false); setOtpStep(false); setOtpCode(""); setOtpError(""); setNameExistsPrompt(null); }}
                       className="text-gray-400 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 p-2 rounded-full transition-colors"
                       disabled={loginSuccess}
                     >
@@ -6098,6 +6197,81 @@ export default function App() {
                           </div>
                         </div>
                       )}
+                      {otpStep ? (
+                        <div className="space-y-5">
+                          <div className="text-center">
+                            <div className="mx-auto w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-3">
+                              <Lock className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                            <h3 className="text-base font-bold text-gray-800 dark:text-white">
+                              Verifikasi Email
+                            </h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              {otpInfo}
+                            </p>
+                          </div>
+                          {otpError && (
+                            <div className="p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2 text-red-600 dark:text-red-400 text-sm">
+                              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                              <span>{otpError}</span>
+                            </div>
+                          )}
+                          <div>
+                            <label htmlFor="otp-code" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 ml-1">
+                              Kode OTP (6 digit)
+                            </label>
+                            <input
+                              id="otp-code"
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={6}
+                              value={otpCode}
+                              onChange={(e) => {
+                                setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                                setOtpError("");
+                              }}
+                              className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white text-center text-2xl font-bold tracking-[0.4em] rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 block p-3.5 outline-none transition-all"
+                              placeholder="••••••"
+                              autoFocus
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={submitOtp}
+                            disabled={isAuthLoading}
+                            className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all hover:shadow-lg hover:shadow-emerald-600/20 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70"
+                          >
+                            {isAuthLoading ? (
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-5 h-5" />
+                            )}
+                            Verifikasi & Daftar
+                          </button>
+                          <div className="flex items-center justify-between text-xs">
+                            <button
+                              type="button"
+                              onClick={resendOtp}
+                              disabled={isAuthLoading}
+                              className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline disabled:opacity-50"
+                            >
+                              Kirim ulang kode
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOtpStep(false);
+                                setOtpCode("");
+                                setOtpError("");
+                              }}
+                              className="text-gray-500 dark:text-gray-400 font-semibold hover:underline"
+                            >
+                              Ganti email
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                      <>
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
@@ -6235,6 +6409,8 @@ export default function App() {
                               loginMode === "login" ? "register" : "login",
                             );
                             setLoginError("");
+                            setNameExistsPrompt(null);
+                            setOtpStep(false);
                           }}
                           className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold transition-colors underline decoration-2 underline-offset-4"
                           disabled={loginSuccess}
@@ -6244,6 +6420,8 @@ export default function App() {
                             : "Masuk di sini"}
                         </button>
                       </div>
+                      </>
+                      )}
                     </>
                   )}
                 </div>

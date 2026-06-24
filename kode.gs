@@ -193,6 +193,33 @@ function doPost(e) {
       return out;
     }
 
+    // Nama sheet sistem yang DILINDUNGI (skema konsolidasi v2) — cocok PERSIS.
+    // Sheet lama per-email (<jenis>_DataAsli_<email>) & arsip *_old_v1 TIDAK
+    // termasuk → dianggap tidak terpakai sehingga bisa dibersihkan.
+    function isProtectedSheet(name) {
+      var exact = [
+        "Users",
+        "Users_Demo",
+        "Users_DataAsli",
+        "Jadwal_Alarm",
+        "Log_Login",
+        "OTP_Verifikasi",
+        "Logs_Demo",
+        "Logs_DataAsli",
+        "Status_Demo",
+        "Status_DataAsli",
+        "Ringkasan_Demo",
+        "Ringkasan_DataAsli",
+        "Grafik_Demo",
+        "Grafik_DataAsli",
+        "Lingkungan_Demo",
+        "Lingkungan_DataAsli",
+        "RataRataLingkungan_Demo",
+        "RataRataLingkungan_DataAsli",
+      ];
+      return exact.indexOf(name) !== -1;
+    }
+
     // Tipe akun berdasarkan mode: Demo dan Asli adalah AKUN TERPISAH
     // (boleh email sama, password & data berbeda) dibedakan kolom "Tipe".
     var wantedTipe = data.isDemoMode ? "Demo" : "Asli";
@@ -223,7 +250,153 @@ function doPost(e) {
       styleHeader(sUsers, 7, "#7c3aed");
     }
 
+    // ── KIRIM OTP ke email (verifikasi email benar-benar ada) ──────────────
+    if (data.action === "sendOtp") {
+      // Tolak jika email sudah terdaftar (Tipe sama)
+      var otpRegRows = getSheetRows(sUsers);
+      for (var i = 0; i < otpRegRows.length; i++) {
+        if (
+          String(otpRegRows[i][0]).toLowerCase().trim() === emailNorm &&
+          String(otpRegRows[i][6] || "").trim() === wantedTipe
+        ) {
+          return ContentService.createTextOutput(
+            JSON.stringify({
+              status: "error",
+              message:
+                "Email sudah terdaftar untuk mode " +
+                (data.isDemoMode ? "Demo" : "Asli") +
+                "!",
+            }),
+          ).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+      var otpLegRows = getSheetRows(legacyForMode);
+      for (var i = 0; i < otpLegRows.length; i++) {
+        if (String(otpLegRows[i][0]).toLowerCase().trim() === emailNorm) {
+          return ContentService.createTextOutput(
+            JSON.stringify({
+              status: "error",
+              message:
+                "Email sudah terdaftar untuk mode " +
+                (data.isDemoMode ? "Demo" : "Asli") +
+                "!",
+            }),
+          ).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+      // Peringatan nama duplikat (kecuali forceRegister)
+      if (!data.forceRegister && data.name) {
+        var otpNameNorm = String(data.name).toLowerCase().trim();
+        for (var i = 0; i < otpRegRows.length; i++) {
+          if (
+            String(otpRegRows[i][2] || "").toLowerCase().trim() === otpNameNorm &&
+            String(otpRegRows[i][6] || "").trim() === wantedTipe
+          ) {
+            return ContentService.createTextOutput(
+              JSON.stringify({
+                status: "name_exists",
+                message:
+                  'Nama "' + data.name + '" sudah dipakai. Mungkin Anda ingin login?',
+              }),
+            ).setMimeType(ContentService.MimeType.JSON);
+          }
+        }
+      }
+      // Buat & simpan kode OTP
+      var sOtp =
+        sheet.getSheetByName("OTP_Verifikasi") ||
+        sheet.insertSheet("OTP_Verifikasi");
+      if (sOtp.getLastRow() === 0) {
+        sOtp.appendRow(["Email", "Tipe", "Kode", "Kadaluarsa(ms)", "Dibuat"]);
+        styleHeader(sOtp, 5, "#9333ea");
+      }
+      var otpCode = String(Math.floor(100000 + Math.random() * 900000));
+      var otpExpiry = Date.now() + 10 * 60 * 1000; // 10 menit
+      var otpRow = [
+        emailNorm,
+        wantedTipe,
+        otpCode,
+        otpExpiry,
+        new Date().toLocaleString("id-ID"),
+      ];
+      var otpFound = false;
+      if (sOtp.getLastRow() >= 2) {
+        var otpVals = sOtp.getDataRange().getValues();
+        for (var i = 1; i < otpVals.length; i++) {
+          if (
+            String(otpVals[i][0]).toLowerCase().trim() === emailNorm &&
+            String(otpVals[i][1]) === wantedTipe
+          ) {
+            sOtp.getRange(i + 1, 1, 1, 5).setValues([otpRow]);
+            otpFound = true;
+            break;
+          }
+        }
+      }
+      if (!otpFound) sOtp.appendRow(otpRow);
+
+      try {
+        MailApp.sendEmail({
+          to: emailNorm,
+          subject: "Kode Verifikasi - Dashboard Tangkapan Ngengat",
+          htmlBody:
+            '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">' +
+            '<h2 style="color:#059669;margin:0 0 8px">Dashboard Tangkapan Ngengat</h2>' +
+            '<p style="color:#374151;font-size:14px">Gunakan kode berikut untuk verifikasi email Anda saat mendaftar:</p>' +
+            '<div style="text-align:center;margin:20px 0"><span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#111827">' +
+            otpCode +
+            "</span></div>" +
+            '<p style="color:#6b7280;font-size:12px">Kode berlaku <b>10 menit</b>. Abaikan email ini jika Anda tidak mendaftar.</p>' +
+            "</div>",
+        });
+      } catch (eMail) {
+        return ContentService.createTextOutput(
+          JSON.stringify({
+            status: "error",
+            message: "Gagal mengirim email OTP: " + eMail,
+          }),
+        ).setMimeType(ContentService.MimeType.JSON);
+      }
+      return ContentService.createTextOutput(
+        JSON.stringify({
+          status: "otp_sent",
+          message: "Kode OTP telah dikirim ke " + emailNorm,
+        }),
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (data.action === "register") {
+      // Verifikasi OTP wajib (email harus benar-benar ada)
+      var otpInput = String(data.otp || "").trim();
+      var sOtpV = sheet.getSheetByName("OTP_Verifikasi");
+      var otpValid = false;
+      if (sOtpV && otpInput && sOtpV.getLastRow() >= 2) {
+        var otpVV = sOtpV.getDataRange().getValues();
+        for (var oi = 1; oi < otpVV.length; oi++) {
+          if (
+            String(otpVV[oi][0]).toLowerCase().trim() === emailNorm &&
+            String(otpVV[oi][1]) === wantedTipe
+          ) {
+            if (
+              String(otpVV[oi][2]) === otpInput &&
+              Number(otpVV[oi][3]) > Date.now()
+            ) {
+              otpValid = true;
+              sOtpV.deleteRow(oi + 1); // pakai sekali
+            }
+            break;
+          }
+        }
+      }
+      if (!otpValid) {
+        return ContentService.createTextOutput(
+          JSON.stringify({
+            status: "otp_invalid",
+            message: "Kode OTP salah atau sudah kadaluarsa. Silakan kirim ulang.",
+          }),
+        ).setMimeType(ContentService.MimeType.JSON);
+      }
+
       // Cek duplikat HANYA untuk tipe yang sama (Demo/Asli akun terpisah)
       var regRows = getSheetRows(sUsers);
       for (var i = 0; i < regRows.length; i++) {
@@ -609,6 +782,7 @@ function doPost(e) {
           { re: /^Users_DataAsli$|^Users_Demo$/, cols: 6, color: "#7c3aed" },
           { re: /^Log_Login$/, cols: 8, color: "#1e40af" },
           { re: /^Jadwal_Alarm$/, cols: 3, color: "#b45309" },
+          { re: /^OTP_Verifikasi$/, cols: 5, color: "#9333ea" },
           { re: /^Logs(_Demo|_DataAsli)$/, cols: 7, color: "#be123c" },
           { re: /^Logs_/, cols: 5, color: "#be123c" },
           { re: /^Status(_Demo|_DataAsli)$/, cols: 8, color: "#047857" },
@@ -809,32 +983,11 @@ function doPost(e) {
     // ============================================
     if (data.action === "scanSheets") {
       var allSheets = sheet.getSheets();
-      var validPrefixes = [
-        "Users",
-        "Logs_Demo",
-        "Logs_DataAsli_",
-        "Status_Demo",
-        "Status_DataAsli_",
-        "Grafik_Demo",
-        "grafik_Demo",
-        "Grafik_DataAsli_",
-        "Ringkasan_Demo",
-        "Ringkasan_DataAsli_",
-        "Lingkungan_Demo",
-        "Lingkungan_DataAsli_",
-        "RataRataLingkungan_Demo",
-        "RataRataLingkungan_DataAsli_",
-        "Jadwal_Alarm",
-        "Log_Login",
-      ];
       var usedSheets = [];
       var unusedSheets = [];
       allSheets.forEach(function (s) {
         var name = s.getName();
-        var isUsed = validPrefixes.some(function (p) {
-          return name === p || name.indexOf(p) === 0;
-        });
-        if (isUsed) {
+        if (isProtectedSheet(name)) {
           usedSheets.push(name);
         } else {
           unusedSheets.push({ name: name, rows: s.getLastRow() });
@@ -850,31 +1003,10 @@ function doPost(e) {
 
     if (data.action === "deleteSheets") {
       var toDelete = data.sheetNames || [];
-      var validPrefixes = [
-        "Users",
-        "Logs_Demo",
-        "Logs_DataAsli_",
-        "Status_Demo",
-        "Status_DataAsli_",
-        "Grafik_Demo",
-        "grafik_Demo",
-        "Grafik_DataAsli_",
-        "Ringkasan_Demo",
-        "Ringkasan_DataAsli_",
-        "Lingkungan_Demo",
-        "Lingkungan_DataAsli_",
-        "RataRataLingkungan_Demo",
-        "RataRataLingkungan_DataAsli_",
-        "Jadwal_Alarm",
-        "Log_Login",
-      ];
       var deleted = [];
       var failed = [];
       toDelete.forEach(function (name) {
-        var isProtected = validPrefixes.some(function (p) {
-          return name === p || name.indexOf(p) === 0;
-        });
-        if (isProtected) {
+        if (isProtectedSheet(name)) {
           failed.push(name + " (dilindungi sistem)");
           return;
         }
@@ -914,32 +1046,31 @@ function doPost(e) {
 function scanUnusedSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var allSheets = ss.getSheets();
-  var validPrefixes = [
+  var validExact = [
     "Users",
     "Users_Demo",
     "Users_DataAsli",
-    "Logs_Demo",
-    "Logs_DataAsli_",
-    "Status_Demo",
-    "Status_DataAsli_",
-    "Grafik_Demo",
-    "Grafik_DataAsli_",
-    "Ringkasan_Demo",
-    "Ringkasan_DataAsli_",
-    "Lingkungan_Demo",
-    "Lingkungan_DataAsli_",
-    "RataRata_Demo",
-    "RataRata_DataAsli_",
     "Jadwal_Alarm",
     "Log_Login",
+    "OTP_Verifikasi",
+    "Logs_Demo",
+    "Logs_DataAsli",
+    "Status_Demo",
+    "Status_DataAsli",
+    "Ringkasan_Demo",
+    "Ringkasan_DataAsli",
+    "Grafik_Demo",
+    "Grafik_DataAsli",
+    "Lingkungan_Demo",
+    "Lingkungan_DataAsli",
+    "RataRataLingkungan_Demo",
+    "RataRataLingkungan_DataAsli",
   ];
   var unusedSheets = [];
   var usedSheets = [];
   allSheets.forEach(function (s) {
     var name = s.getName();
-    var isUsed = validPrefixes.some(function (p) {
-      return name === p || name.indexOf(p) === 0;
-    });
+    var isUsed = validExact.indexOf(name) !== -1;
     if (isUsed) {
       usedSheets.push(name);
     } else {
