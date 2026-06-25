@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Rabu, 25 Juni 2026 00:39 WIB
+// Terakhir diperbarui: Kamis, 25 Juni 2026 08:10 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -320,6 +320,43 @@ function buildChartFromLogs(
 
   const hasData = result.some((r) => r.NodeA > 0 || r.NodeB > 0);
   return hasData ? result : [];
+}
+
+// Kunci tanggal lokal (WIB di perangkat pengguna) "YYYY-MM-DD" dari epoch ms
+function localDateKey(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Hitung total ngengat PER HARI per node dari logs → untuk DB Efektivitas Harian
+function computeDailyEffect(
+  logs: any[],
+): { date: string; day: string; NodeA: number; NodeB: number }[] {
+  const map: Record<string, { NodeA: number; NodeB: number }> = {};
+  for (const log of logs || []) {
+    const ts =
+      typeof log.timestamp === "number"
+        ? log.timestamp
+        : new Date(log.timestamp).getTime();
+    if (!ts) continue;
+    const key = logNodeKey(log.source || "");
+    if (!key) continue;
+    const dk = localDateKey(ts);
+    if (!map[dk]) map[dk] = { NodeA: 0, NodeB: 0 };
+    map[dk][key] += 1;
+  }
+  return Object.keys(map)
+    .sort()
+    .reverse()
+    .map((dk) => {
+      const d = new Date(dk + "T00:00:00");
+      return {
+        date: dk,
+        day: HARI_NAMA[d.getDay()],
+        NodeA: map[dk].NodeA,
+        NodeB: map[dk].NodeB,
+      };
+    });
 }
 
 function buildDhtChartFromHistory(
@@ -839,7 +876,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Rabu, 25 Juni 2026 00:39 WIB";
+const LAST_UPDATED = "Kamis, 25 Juni 2026 08:10 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -995,6 +1032,10 @@ export default function App() {
 
   // Signal untuk memicu auto-sync setelah data buffer IR tiba
   const [bufferFlushSignal, setBufferFlushSignal] = useState(0);
+
+  // Signal sync SEKETIKA tiap data MQTT real-time tiba (deteksi/lingkungan).
+  // Di-debounce ~6 dtk agar deteksi beruntun digabung jadi 1 kiriman ke DB.
+  const [liveSyncSignal, setLiveSyncSignal] = useState(0);
 
   // Merge data sheet (dhtHistoryAll) + live MQTT sesi ini (dhtHistory) tanpa duplikat
   const dhtBuiltChartData = React.useMemo(() => {
@@ -1346,12 +1387,15 @@ export default function App() {
     [isDemoMode],
   );
 
-  // HEARTBEAT TIMERS — Node dianggap offline jika 30 detik tidak ada data
+  // Jejak waktu data terakhir per node (informasi; status online kini dari LWT)
   const heartbeatRef = React.useRef<{ A: number; B: number }>({
     A: Date.now(),
     B: Date.now(),
   });
-  const HEARTBEAT_TIMEOUT = 15000; // 15 detik — kurang dari 2x interval publish baterai NodeMCU (10 detik)
+  // Eksekusi alarm yang dilaporkan node (untuk cek alarm terlewat)
+  const alarmExecRef = React.useRef<{ node: string; action: string; ts: number }[]>([]);
+  // Kunci alarm yang sudah diproses (hindari log ganda) — "tanggal|node|aksi|HH:MM"
+  const handledAlarmsRef = React.useRef<Set<string>>(new Set());
 
   // 2. Listener Real-Time MQTT dari NodeMCU ESP8266
   useEffect(() => {
@@ -1369,6 +1413,8 @@ export default function App() {
       client.subscribe("dashboard/ngengat/baterai");
       client.subscribe("dashboard/ngengat/lingkungan");
       client.subscribe("dashboard/ngengat/selftest");
+      client.subscribe("dashboard/ngengat/status/+"); // retained — status online/offline node (LWT)
+      client.subscribe("dashboard/ngengat/alarmexec"); // event eksekusi alarm relay terjadwal
       client.subscribe("dashboard/ngengat/settings"); // retained — sinkron pengaturan antar device
       client.subscribe("dashboard/ngengat/schedule"); // retained — jadwal alarm DS3231
     });
@@ -1426,7 +1472,10 @@ export default function App() {
               [
                 {
                   id: Date.now() + Math.random().toString(36).substr(2, 9),
-                  timestamp: payload.ts ? payload.ts * 1000 : Date.now(),
+                  timestamp:
+                    payload.buffered === true && payload.ts
+                      ? payload.ts * 1000
+                      : Date.now(),
                   source: "Node A (UV 365 nm)",
                   action: payload.buffered
                     ? "IR Terpicu (+1) [Buffer]"
@@ -1446,7 +1495,10 @@ export default function App() {
               [
                 {
                   id: Date.now() + Math.random().toString(36).substr(2, 9),
-                  timestamp: payload.ts ? payload.ts * 1000 : Date.now(),
+                  timestamp:
+                    payload.buffered === true && payload.ts
+                      ? payload.ts * 1000
+                      : Date.now(),
                   source: "Node B (UV 395 nm)",
                   action: payload.buffered
                     ? "IR Terpicu (+1) [Buffer]"
@@ -1456,6 +1508,8 @@ export default function App() {
               ].slice(0, 100),
             );
           }
+          // Deteksi real-time → picu sync seketika ke database (debounce 6 dtk)
+          if (payload.buffered !== true) setLiveSyncSignal((s) => s + 1);
         } else if (topic === "dashboard/ngengat/baterai") {
           // Jika data baterai berasal dari buffer dan fitur buffer baterai dinonaktifkan, abaikan
           if (payload.buffered === true && !bufferBatteryEnabledRef.current)
@@ -1480,6 +1534,11 @@ export default function App() {
           const nodeKey = payload.node === "B" ? "B" : "A";
           heartbeatRef.current[nodeKey] = Date.now();
 
+          // Data DHT (tiap 30 dtk) ikut menandai node ONLINE agar status tidak
+          // berkedip offline di antara publish baterai (tiap 60 dtk).
+          if (nodeKey === "B") setNodeB((prev) => (prev.online ? prev : { ...prev, online: true }));
+          else setNodeA((prev) => (prev.online ? prev : { ...prev, online: true }));
+
           const temp = Number(parseFloat(payload.temp).toFixed(1));
           const humidity = Number(parseFloat(payload.humidity).toFixed(1));
           const now = Date.now();
@@ -1500,6 +1559,8 @@ export default function App() {
             ...prev,
             { timestamp: now, node: nodeKey, temp, humidity },
           ]);
+          // Lingkungan baru → picu sync seketika ke database (debounce 6 dtk)
+          setLiveSyncSignal((s) => s + 1);
         }
         if (topic === "dashboard/ngengat/selftest") {
           const st = {
@@ -1511,8 +1572,42 @@ export default function App() {
             hum:      Number(payload.hum)  || 0,
             rtcTime:  String(payload.rtcTime || "--"),
           };
-          if (payload.node === "B") setSelfTestB(st);
-          else setSelfTestA(st);
+          if (payload.node === "B") {
+            heartbeatRef.current.B = Date.now();
+            setSelfTestB(st);
+            setNodeB((prev) => (prev.online ? prev : { ...prev, online: true }));
+          } else {
+            heartbeatRef.current.A = Date.now();
+            setSelfTestA(st);
+            setNodeA((prev) => (prev.online ? prev : { ...prev, online: true }));
+          }
+        }
+        if (topic === "dashboard/ngengat/alarmexec") {
+          // Node melaporkan relay terjadwal SUKSES dieksekusi → catat Berhasil
+          const node = payload.node === "B" ? "B" : "A";
+          const act = payload.action === "OFF" ? "OFF" : "ON";
+          const tms = payload.ts ? payload.ts * 1000 : Date.now();
+          alarmExecRef.current.push({ node, action: act, ts: tms });
+          if (alarmExecRef.current.length > 50) alarmExecRef.current.shift();
+          if (userProfile && SCRIPT_URL && !isDemoMode) {
+            postWithRetry({
+              action: "logAlarm",
+              node,
+              alarmAction: act,
+              status: "Berhasil",
+              ts: tms,
+              email: userProfile.email,
+              name: userProfile.displayName,
+              isDemoMode: false,
+            }).catch(() => {});
+          }
+        }
+        if (topic.startsWith("dashboard/ngengat/status/")) {
+          // Status node = koneksi MQTT asli (LWT). Sumber kebenaran online/offline.
+          const node = topic.endsWith("/B") || payload.node === "B" ? "B" : "A";
+          const isOnline = payload.online === true;
+          if (node === "B") setNodeB((prev) => (prev.online === isOnline ? prev : { ...prev, online: isOnline }));
+          else setNodeA((prev) => (prev.online === isOnline ? prev : { ...prev, online: isOnline }));
         }
         if (topic === "dashboard/ngengat/schedule") {
           if (Array.isArray(payload.schedules)) {
@@ -1554,27 +1649,11 @@ export default function App() {
     };
   }, [isDemoMode]);
 
-  // HEARTBEAT CHECK — Jalankan tiap 5 detik untuk deteksi node offline
-  useEffect(() => {
-    if (isDemoMode) return;
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-
-      if (now - heartbeatRef.current.A > HEARTBEAT_TIMEOUT) {
-        setNodeA((prev) =>
-          prev.online !== false ? { ...prev, online: false } : prev,
-        );
-      }
-      if (now - heartbeatRef.current.B > HEARTBEAT_TIMEOUT) {
-        setNodeB((prev) =>
-          prev.online !== false ? { ...prev, online: false } : prev,
-        );
-      }
-    }, 3000); // cek tiap 3 detik
-
-    return () => clearInterval(interval);
-  }, [isDemoMode]);
+  // Catatan: status online/offline TIDAK lagi ditebak dari kedatangan data
+  // (heartbeat) yang dulu bikin berkedip. Kini bersumber dari:
+  //   (1) topik retained "dashboard/ngengat/status/{A,B}" — LWT koneksi MQTT node,
+  //   (2) event "offline" MQTT browser (semua node offline jika browser putus).
+  // Data deteksi/baterai/DHT/selftest hanya boleh MENGUATKAN online (tak pernah set offline).
 
   // Auto-sync ke Google Sheets setiap 5 menit
   useEffect(() => {
@@ -1593,6 +1672,7 @@ export default function App() {
               nodeB: dataRef.current.nodeB,
               chartData: dataRef.current.chartData,
               effectChartData: dataRef.current.effectChartData,
+              dailyEffect: computeDailyEffect(dataRef.current.logs),
               lingkunganData: dataRef.current.dhtHistory,
               email: userProfile.email,
               name: userProfile.displayName,
@@ -1713,6 +1793,7 @@ export default function App() {
           nodeB: dataRef.current.nodeB,
           chartData: dataRef.current.chartData,
           effectChartData: dataRef.current.effectChartData,
+          dailyEffect: computeDailyEffect(dataRef.current.logs),
           lingkunganData: dataRef.current.dhtHistory,
           email: userProfile.email,
           name: userProfile.displayName,
@@ -1723,6 +1804,126 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [bufferFlushSignal, userProfile, isDemoMode]);
+
+  // Sync SEKETIKA ke database tiap data MQTT real-time tiba.
+  // Debounce 6 dtk: deteksi beruntun digabung jadi 1 kiriman (hemat kuota GAS),
+  // tapi data tetap masuk DB & grafik jauh lebih cepat dari interval 5 menit.
+  useEffect(() => {
+    if (liveSyncSignal === 0) return;
+    if (!userProfile || !SCRIPT_URL || isDemoMode) return;
+
+    const timer = setTimeout(() => {
+      postWithRetry({
+        action: "syncData",
+        logs: dataRef.current.logs,
+        nodeA: dataRef.current.nodeA,
+        nodeB: dataRef.current.nodeB,
+        chartData: dataRef.current.chartData,
+        effectChartData: dataRef.current.effectChartData,
+        dailyEffect: computeDailyEffect(dataRef.current.logs),
+        lingkunganData: dataRef.current.dhtHistory,
+        email: userProfile.email,
+        name: userProfile.displayName,
+        isDemoMode: false,
+      }).catch((e) => console.error("Live auto-sync failed:", e));
+    }, 6000);
+
+    return () => clearTimeout(timer);
+  }, [liveSyncSignal, userProfile, isDemoMode]);
+
+  // Publish TOTAL NGENGAT HARI INI per node ke MQTT retained.
+  // Firmware memakainya untuk Telegram "Total hari ini" (+ tambahan deteksi lokalnya).
+  useEffect(() => {
+    if (isDemoMode) return;
+    const client = mqttClientRef.current;
+    if (!client) return;
+    const t = setTimeout(() => {
+      const todayKey = localDateKey(Date.now());
+      let a = 0,
+        b = 0;
+      for (const log of logs) {
+        const ts =
+          typeof log.timestamp === "number"
+            ? log.timestamp
+            : new Date(log.timestamp).getTime();
+        if (!ts || localDateKey(ts) !== todayKey) continue;
+        const key = logNodeKey(log.source || "");
+        if (key === "NodeA") a++;
+        else if (key === "NodeB") b++;
+      }
+      try {
+        client.publish(
+          "dashboard/ngengat/today/A",
+          JSON.stringify({ date: todayKey, total: a }),
+          { retain: true, qos: 0 },
+        );
+        client.publish(
+          "dashboard/ngengat/today/B",
+          JSON.stringify({ date: todayKey, total: b }),
+          { retain: true, qos: 0 },
+        );
+      } catch {}
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [logs, isDemoMode]);
+
+  // DETEKSI ALARM TERLEWAT — bila pada jam terjadwal node tak melapor eksekusi,
+  // catat "Gagal (Terlewat)" ke Log_Alarm. Yang berhasil dicatat via topik alarmexec.
+  useEffect(() => {
+    if (isDemoMode || !userProfile || !SCRIPT_URL) return;
+    const check = () => {
+      const now = Date.now();
+      const d = new Date();
+      const dayIdx = d.getDay(); // 0=Min … 6=Sab (selaras bitmask firmware)
+      const todayKey = localDateKey(now);
+      const GRACE = 3 * 60 * 1000;
+      for (const s of schedules) {
+        if (!s.enabled) continue;
+        if (((s.days >> dayIdx) & 1) === 0) continue;
+        const events = [
+          { action: "ON", h: s.onHour, m: s.onMin },
+          { action: "OFF", h: s.offHour, m: s.offMin },
+        ];
+        for (const ev of events) {
+          const sched = new Date(
+            d.getFullYear(),
+            d.getMonth(),
+            d.getDate(),
+            ev.h,
+            ev.m,
+            0,
+          ).getTime();
+          if (now < sched + GRACE) continue;
+          for (const node of ["A", "B"] as const) {
+            const key = `${todayKey}|${node}|${ev.action}|${ev.h}:${ev.m}`;
+            if (handledAlarmsRef.current.has(key)) continue;
+            handledAlarmsRef.current.add(key);
+            const matched = alarmExecRef.current.some(
+              (e) =>
+                e.node === node &&
+                e.action === ev.action &&
+                Math.abs(e.ts - sched) < 6 * 60 * 1000,
+            );
+            if (!matched) {
+              postWithRetry({
+                action: "logAlarm",
+                node,
+                alarmAction: ev.action,
+                status: "Gagal (Terlewat)",
+                ts: sched,
+                email: userProfile.email,
+                name: userProfile.displayName,
+                isDemoMode: false,
+              }).catch(() => {});
+            }
+          }
+        }
+      }
+    };
+    const iv = setInterval(check, 60000);
+    check();
+    return () => clearInterval(iv);
+  }, [isDemoMode, userProfile, schedules]);
 
   // Update config SW saat jumlah tangkapan berubah (untuk notif background)
   useEffect(() => {
@@ -2237,6 +2438,7 @@ export default function App() {
         nodeB: dataRef.current.nodeB,
         chartData: dataRef.current.chartData,
         effectChartData: dataRef.current.effectChartData,
+        dailyEffect: computeDailyEffect(dataRef.current.logs),
         lingkunganData: dataRef.current.dhtHistory,
         isDemoMode: isDemoMode,
         email: userProfile?.email,

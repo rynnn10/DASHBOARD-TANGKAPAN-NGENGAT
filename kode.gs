@@ -1,6 +1,6 @@
 // ============================================================
 // Backend Google Apps Script — Dashboard Tangkapan Ngengat
-// Terakhir diperbarui: Rabu, 24 Juni 2026 21:30 WIB
+// Terakhir diperbarui: Kamis, 25 Juni 2026 08:10 WIB
 // ============================================================
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -41,6 +41,27 @@ function doPost(e) {
       try {
         if (s.getFrozenRows() < 1) s.setFrozenRows(1);
       } catch (e) {}
+    }
+
+    // Format epoch (ms) ke waktu WIB eksplisit (GMT+7), apa pun zona project.
+    // Memperbaiki bug jam yang tidak sesuai kenyataan di sheet.
+    function fmtWIB(ms) {
+      var n = Number(ms);
+      if (!n || isNaN(n)) return "";
+      return Utilities.formatDate(new Date(n), "GMT+7", "dd/MM/yyyy HH.mm.ss");
+    }
+    // Nama hari Indonesia dari epoch (ms) dalam WIB
+    var HARI_ID_GS = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
+    function hariWIB(ms) {
+      var n = Number(ms);
+      if (!n || isNaN(n)) return "";
+      return HARI_ID_GS[Number(Utilities.formatDate(new Date(n), "GMT+7", "u")) % 7];
+    }
+    // Kunci tanggal WIB "YYYY-MM-DD" dari epoch (ms)
+    function dateKeyWIB(ms) {
+      var n = Number(ms);
+      if (!n || isNaN(n)) return "";
+      return Utilities.formatDate(new Date(n), "GMT+7", "yyyy-MM-dd");
     }
 
     // ============================================
@@ -711,6 +732,28 @@ function doPost(e) {
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
+    // ── LOG EKSEKUSI ALARM — relay ON/OFF terjadwal (Berhasil) atau terlewat (Gagal) ──
+    if (data.action === "logAlarm") {
+      var sAlarm = getConsolidatedSheet(
+        "Log_Alarm" + modeBase,
+        ["Waktu Eksekusi", "Node", "Aksi", "Status", "Timestamp_ms"],
+        "#b45309",
+      );
+      var tms = Number(data.ts) || Date.now();
+      prependUserRows(sAlarm, partName, partEmail, [
+        [
+          fmtWIB(tms),
+          data.node || "-",
+          data.alarmAction || "-",     // "ON" / "OFF"
+          data.status || "Berhasil",   // "Berhasil" / "Gagal (Terlewat)"
+          tms,
+        ],
+      ]);
+      return ContentService.createTextOutput(
+        JSON.stringify({ status: "success", message: "Log alarm tersimpan" }),
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
     // ============================================
     // 4. FITUR LOG, GRAFIK & NOTIFIKASI
     // ============================================
@@ -730,7 +773,7 @@ function doPost(e) {
         var rL = data.logs.map(function (l) {
           return [
             l.id,
-            new Date(l.timestamp).toLocaleString("id-ID"),
+            fmtWIB(l.timestamp), // waktu WIB eksplisit (perbaikan bug jam)
             l.source,
             l.action,
             l.timestamp,
@@ -802,6 +845,51 @@ function doPost(e) {
         appendUserRows(sC, partName, partEmail, rC);
       }
 
+      // ── EFEKTIVITAS HARIAN — total ngengat per HARI per node (upsert per tanggal) ──
+      // Tidak menimpa hari lama: hanya memperbarui/menambah tanggal yang dikirim.
+      if (
+        data.action === "syncData" &&
+        data.dailyEffect &&
+        data.dailyEffect.length > 0
+      ) {
+        var sEff = getConsolidatedSheet(
+          "Efektivitas_Harian" + modeBase,
+          ["Tanggal", "Hari", "Node A (365nm)", "Node B (395nm)", "Total"],
+          "#9333ea",
+        );
+        // Peta tanggal → nomor baris (untuk user ini). Kolom: 1 Nama,2 Email,3 Tanggal..7 Total
+        var effExisting = {};
+        var effLastR = sEff.getLastRow();
+        if (effLastR > 1) {
+          var effVals = sEff.getRange(2, 1, effLastR - 1, 7).getValues();
+          for (var ei = 0; ei < effVals.length; ei++) {
+            if (
+              String(effVals[ei][1]).toLowerCase().trim() ===
+                String(partEmail).toLowerCase().trim() &&
+              effVals[ei][2]
+            )
+              effExisting[String(effVals[ei][2])] = ei + 2;
+          }
+        }
+        var effAppend = [];
+        data.dailyEffect.forEach(function (e) {
+          var a = Number(e.NodeA) || 0;
+          var b = Number(e.NodeB) || 0;
+          var fullRow = [partName, partEmail, e.date, e.day, a, b, a + b];
+          if (effExisting[e.date]) {
+            sEff.getRange(effExisting[e.date], 1, 1, 7).setValues([fullRow]);
+          } else {
+            effAppend.push([e.date, e.day, a, b, a + b]);
+          }
+        });
+        if (effAppend.length) {
+          effAppend.sort(function (x, y) {
+            return x[0] < y[0] ? 1 : -1;
+          }); // tanggal terbaru di atas
+          prependUserRows(sEff, partName, partEmail, effAppend);
+        }
+      }
+
       // Simpan Suhu & Kelembaban DHT22 — append dedup per user berbasis Timestamp_ms
       if (
         data.action === "syncData" &&
@@ -832,7 +920,7 @@ function doPost(e) {
           })
           .map(function (d) {
             return [
-              new Date(d.timestamp).toLocaleString("id-ID"),
+              fmtWIB(d.timestamp), // waktu WIB eksplisit (perbaikan bug jam)
               d.node,
               d.temp,
               d.humidity,
@@ -956,6 +1044,26 @@ function doPost(e) {
           }
         }
 
+        // ── Efektivitas harian (riwayat total per hari) + total HARI INI ──
+        var ObjectDailyEffect = [];
+        var todayKey = dateKeyWIB(Date.now());
+        var ObjectToday = { date: todayKey, NodeA: 0, NodeB: 0 };
+        var effRows = readUserRows("Efektivitas_Harian" + modeBase, partEmail);
+        for (var i = 0; i < effRows.length; i++) {
+          if (!effRows[i][0]) continue; // kolom: 0 Tanggal,1 Hari,2 A,3 B,4 Total
+          var dEnt = {
+            date: effRows[i][0],
+            day: effRows[i][1],
+            NodeA: Number(effRows[i][2]) || 0,
+            NodeB: Number(effRows[i][3]) || 0,
+          };
+          ObjectDailyEffect.push(dEnt);
+          if (String(effRows[i][0]) === todayKey) {
+            ObjectToday.NodeA = dEnt.NodeA;
+            ObjectToday.NodeB = dEnt.NodeB;
+          }
+        }
+
         var ObjectLingkungan = [];
         var lingRows = readUserRows("Lingkungan" + modeBase, partEmail);
         for (var i = 0; i < lingRows.length; i++) {
@@ -1037,6 +1145,8 @@ function doPost(e) {
               logs: ObjectLogs,
               chartData: ObjectChartData,
               effectChartData: ObjectSummary,
+              dailyEffect: ObjectDailyEffect,
+              todayEffect: ObjectToday,
               lingkunganHistory: ObjectLingkungan,
               rataRata: rataRata,
             },
