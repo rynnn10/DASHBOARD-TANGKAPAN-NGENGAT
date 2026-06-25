@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Kamis, 25 Juni 2026 16:01 WIB
+// Terakhir diperbarui: Kamis, 25 Juni 2026 17:50 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -876,7 +876,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Kamis, 25 Juni 2026 16:01 WIB";
+const LAST_UPDATED = "Kamis, 25 Juni 2026 17:50 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -1194,6 +1194,54 @@ export default function App() {
       setLoginModalOpen(true);
     }
   }, [userProfile, loginSuccess]);
+
+  // Logout paksa: hapus profil + token sesi, buka modal login.
+  const forceLogout = React.useCallback(() => {
+    setUserProfile(null);
+    try {
+      localStorage.removeItem("userProfile");
+      localStorage.removeItem("sessionToken");
+    } catch {}
+    setLoginSuccess(false);
+    setLoginModalOpen(true);
+  }, []);
+
+  // VALIDASI SESI — sesi sah hanya jika baris Log_Login (token) masih ada di DB.
+  // Admin hapus baris di sheet → token tak ketemu → device ini login ulang.
+  // Cek 20 dtk setelah buka (beri waktu baris login tersimpan) lalu tiap 5 menit.
+  // TIDAK logout saat gagal jaringan — hanya saat server tegas bilang valid:false.
+  useEffect(() => {
+    if (isDemoMode || !userProfile || !SCRIPT_URL) return;
+    let cancelled = false;
+    const validate = async () => {
+      const token = localStorage.getItem("sessionToken");
+      if (!token) {
+        // Sesi lama tanpa token → wajib login ulang sekali agar dapat token
+        if (!cancelled) forceLogout();
+        return;
+      }
+      try {
+        const res = await postWithRetry({
+          action: "validateSession",
+          email: userProfile.email,
+          sessionId: token,
+          isDemoMode: false,
+        });
+        if (!cancelled && res && res.status === "success" && res.valid === false) {
+          forceLogout();
+        }
+      } catch {
+        // jaringan gagal → biarkan sesi (jangan logout)
+      }
+    };
+    const first = setTimeout(validate, 20000);
+    const iv = setInterval(validate, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearTimeout(first);
+      clearInterval(iv);
+    };
+  }, [isDemoMode, userProfile, forceLogout]);
 
   // Tutup modal login setelah animasi sukses — profil sudah disimpan sebelumnya
   useEffect(() => {
@@ -2731,23 +2779,38 @@ export default function App() {
     } catch {}
   };
 
-  const logLoginActivity = async (email: string, demoMode: boolean) => {
+  const logLoginActivity = async (
+    email: string,
+    demoMode: boolean,
+    sessionId: string,
+  ) => {
     if (!SCRIPT_URL) return;
+    let ip = "-",
+      city = "-",
+      country = "-";
     try {
       const ipRes = await fetch("https://ipapi.co/json/");
       const ipData = await ipRes.json();
+      ip = ipData.ip || "-";
+      city = ipData.city || "-";
+      country = ipData.country_name || "-";
+    } catch {
+      // IP gagal diambil — tetap simpan log dengan "-"
+    }
+    try {
       await fetch(SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           action: "saveLoginLog",
           email,
-          ip: ipData.ip || "-",
-          city: ipData.city || "-",
-          country: ipData.country_name || "-",
+          ip,
+          city,
+          country,
           userAgent: navigator.userAgent,
           isDemoMode: demoMode,
           status: "success",
+          sessionId, // token sesi device — untuk validasi sesi
         }),
       });
     } catch {
@@ -2849,9 +2912,17 @@ export default function App() {
       localStorage.setItem("isDemoMode", "false");
       setPendingRealMode(false);
     }
+    // Token sesi unik per login → disimpan di device & baris Log_Login (kolom SessionID).
+    // Hapus baris itu di database → device wajib login ulang.
+    const sessionToken =
+      (typeof crypto !== "undefined" && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : Date.now() + "-" + Math.random().toString(36).slice(2));
+    try { localStorage.setItem("sessionToken", sessionToken); } catch {}
+
     setOtpStep(false);
     setLoginSuccess(true);
-    logLoginActivity(loginEmail, pendingRealMode ? false : isDemoMode);
+    logLoginActivity(loginEmail, pendingRealMode ? false : isDemoMode, sessionToken);
   };
 
   // Verifikasi OTP lalu buat akun

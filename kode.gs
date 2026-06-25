@@ -1,6 +1,6 @@
 // ============================================================
 // Backend Google Apps Script — Dashboard Tangkapan Ngengat
-// Terakhir diperbarui: Kamis, 25 Juni 2026 16:01 WIB
+// Terakhir diperbarui: Kamis, 25 Juni 2026 17:50 WIB
 // ============================================================
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -668,11 +668,16 @@ function doPost(e) {
           "Perangkat/Browser",
           "Mode",
           "Status",
+          "SessionID",
         ]);
-        styleHeader(sLog, 8, "#1e40af");
+        styleHeader(sLog, 9, "#1e40af");
+      } else if (!sLog.getRange(1, 9).getValue()) {
+        // Self-heal: tambah kolom SessionID pada sheet lama (8 kolom)
+        sLog.getRange(1, 9).setValue("SessionID");
+        styleHeader(sLog, 9, "#1e40af");
       }
       var logLoginRow = [
-        new Date().toLocaleString("id-ID"),
+        fmtWIB(Date.now()),
         data.email || "-",
         data.ip || "-",
         data.city || "-",
@@ -680,12 +685,37 @@ function doPost(e) {
         data.userAgent || "-",
         data.isDemoMode ? "Demo" : "Asli",
         data.status || "success",
+        data.sessionId || "-", // token sesi: penanda device untuk validasi
       ];
       // Sisipkan login terbaru di baris 2 (paling atas) bukan di bawah
       sLog.insertRowsAfter(1, 1);
       sLog.getRange(2, 1, 1, logLoginRow.length).setValues([logLoginRow]);
       return ContentService.createTextOutput(
         JSON.stringify({ status: "success", message: "Login log tersimpan!" }),
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ── VALIDASI SESI — sesi sah hanya jika baris Log_Login (token) masih ada.
+    // Admin hapus baris di sheet → token tak ketemu → device wajib login ulang.
+    if (data.action === "validateSession") {
+      var sLogV = sheet.getSheetByName("Log_Login");
+      var token = String(data.sessionId || "");
+      var emV = String(data.email || "").toLowerCase().trim();
+      var valid = false;
+      if (sLogV && sLogV.getLastRow() >= 2 && token) {
+        var lvV = sLogV.getRange(2, 1, sLogV.getLastRow() - 1, 9).getValues();
+        for (var vi = 0; vi < lvV.length; vi++) {
+          if (
+            String(lvV[vi][1]).toLowerCase().trim() === emV &&
+            String(lvV[vi][8]) === token
+          ) {
+            valid = true;
+            break;
+          }
+        }
+      }
+      return ContentService.createTextOutput(
+        JSON.stringify({ status: "success", valid: valid }),
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -1008,7 +1038,7 @@ function doPost(e) {
         var colorMap = [
           { re: /^Users$/, cols: 7, color: "#7c3aed" },
           { re: /^Users_DataAsli$|^Users_Demo$/, cols: 6, color: "#7c3aed" },
-          { re: /^Log_Login$/, cols: 8, color: "#1e40af" },
+          { re: /^Log_Login$/, cols: 9, color: "#1e40af" },
           { re: /^Jadwal_Alarm$/, cols: 3, color: "#b45309" },
           { re: /^OTP_Verifikasi$/, cols: 5, color: "#9333ea" },
           { re: /^Logs(_Demo|_DataAsli)$/, cols: 7, color: "#be123c" },
