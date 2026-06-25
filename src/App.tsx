@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Kamis, 25 Juni 2026 08:10 WIB
+// Terakhir diperbarui: Kamis, 25 Juni 2026 16:01 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -876,7 +876,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Kamis, 25 Juni 2026 08:10 WIB";
+const LAST_UPDATED = "Kamis, 25 Juni 2026 16:01 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -1014,6 +1014,24 @@ export default function App() {
     bufferBatteryEnabledRef.current = bufferBatteryEnabled;
   }, [bufferBatteryEnabled]);
 
+  // Jam aktif Telegram (perintah masuk) — di luar jam ini sensor abaikan perintah
+  // demi hemat RAM & prioritas deteksi. Dikirim ke firmware via MQTT retained.
+  const [tgWindow, setTgWindow] = useState<{ start: number; end: number }>(() => {
+    try {
+      const s = localStorage.getItem("tgWindow");
+      if (s) return JSON.parse(s);
+    } catch {}
+    return { start: 6, end: 18 };
+  });
+  const publishTgWindow = React.useCallback(
+    (w: { start: number; end: number }) => {
+      try { localStorage.setItem("tgWindow", JSON.stringify(w)); } catch {}
+      const c = mqttClientRef.current;
+      if (c) c.publish("dashboard/ngengat/tgwindow", JSON.stringify(w), { retain: true, qos: 1 });
+    },
+    [],
+  );
+
   // DHT history — riwayat pembacaan suhu/kelembaban untuk sinkronisasi ke Sheet
   const [dhtHistory, setDhtHistory] = useState<
     { timestamp: number; node: string; temp: number; humidity: number }[]
@@ -1137,6 +1155,11 @@ export default function App() {
   const [loginMode, setLoginMode] = useState<"login" | "register">("login");
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(true);
+  // Status koneksi ke database (Apps Script): "unknown" | "connected" | "error"
+  const [dbStatus, setDbStatus] = useState<"unknown" | "connected" | "error">("unknown");
+  // Gerbang: auto-sync HANYA boleh jalan setelah fetch awal sukses (cegah kirim 0
+  // yang menimpa total di DB sebelum data termuat).
+  const initialLoadDoneRef = React.useRef(false);
   const [pendingRealMode, setPendingRealMode] = useState(false);
 
   const [userProfile, setUserProfile] = useState<{
@@ -1417,6 +1440,11 @@ export default function App() {
       client.subscribe("dashboard/ngengat/alarmexec"); // event eksekusi alarm relay terjadwal
       client.subscribe("dashboard/ngengat/settings"); // retained — sinkron pengaturan antar device
       client.subscribe("dashboard/ngengat/schedule"); // retained — jadwal alarm DS3231
+      // Pastikan firmware punya jam aktif Telegram terbaru (retained)
+      try {
+        const w = JSON.parse(localStorage.getItem("tgWindow") || '{"start":6,"end":18}');
+        client.publish("dashboard/ngengat/tgwindow", JSON.stringify(w), { retain: true, qos: 1 });
+      } catch {}
     });
 
     client.on("message", (topic, message) => {
@@ -1478,7 +1506,7 @@ export default function App() {
                       : Date.now(),
                   source: "Node A (UV 365 nm)",
                   action: payload.buffered
-                    ? "IR Terpicu (+1) [Buffer]"
+                    ? `IR Terpicu (+1) [Buffer • WiFi ${payload.wifi ? "aktif" : "mati"}]`
                     : "IR Terpicu (+1)",
                 },
                 ...prevLogs,
@@ -1501,7 +1529,7 @@ export default function App() {
                       : Date.now(),
                   source: "Node B (UV 395 nm)",
                   action: payload.buffered
-                    ? "IR Terpicu (+1) [Buffer]"
+                    ? `IR Terpicu (+1) [Buffer • WiFi ${payload.wifi ? "aktif" : "mati"}]`
                     : "IR Terpicu (+1)",
                 },
                 ...prevLogs,
@@ -1661,6 +1689,8 @@ export default function App() {
 
     const syncInterval = setInterval(
       async () => {
+        // Jangan sync sebelum data awal termuat (cegah menimpa total DB dengan 0)
+        if (!initialLoadDoneRef.current) return;
         try {
           await fetch(SCRIPT_URL, {
             method: "POST",
@@ -1679,8 +1709,10 @@ export default function App() {
               isDemoMode: isDemoMode,
             }),
           });
+          setDbStatus("connected");
           console.log("Auto-sync success");
         } catch (e) {
+          setDbStatus("error");
           console.error("Auto-sync failed:", e);
         }
       },
@@ -1781,6 +1813,7 @@ export default function App() {
   useEffect(() => {
     if (bufferFlushSignal === 0) return;
     if (!userProfile || !SCRIPT_URL || isDemoMode) return;
+    if (!initialLoadDoneRef.current) return; // tunggu data awal termuat
 
     const timer = setTimeout(() => {
       fetch(SCRIPT_URL, {
@@ -1799,7 +1832,12 @@ export default function App() {
           name: userProfile.displayName,
           isDemoMode: false,
         }),
-      }).catch((e) => console.error("Buffer auto-sync failed:", e));
+      })
+        .then(() => setDbStatus("connected"))
+        .catch((e) => {
+          setDbStatus("error");
+          console.error("Buffer auto-sync failed:", e);
+        });
     }, 3000);
 
     return () => clearTimeout(timer);
@@ -1811,6 +1849,7 @@ export default function App() {
   useEffect(() => {
     if (liveSyncSignal === 0) return;
     if (!userProfile || !SCRIPT_URL || isDemoMode) return;
+    if (!initialLoadDoneRef.current) return; // tunggu data awal termuat
 
     const timer = setTimeout(() => {
       postWithRetry({
@@ -1825,7 +1864,12 @@ export default function App() {
         email: userProfile.email,
         name: userProfile.displayName,
         isDemoMode: false,
-      }).catch((e) => console.error("Live auto-sync failed:", e));
+      })
+        .then(() => setDbStatus("connected"))
+        .catch((e) => {
+          setDbStatus("error");
+          console.error("Live auto-sync failed:", e);
+        });
     }, 6000);
 
     return () => clearTimeout(timer);
@@ -1961,9 +2005,15 @@ export default function App() {
           if (Array.isArray(result.data.lingkunganHistory)) {
             setDhtHistoryAll(result.data.lingkunganHistory);
           }
+          setDbStatus("connected");
+          // Buka gerbang sync HANYA setelah data awal benar-benar termuat
+          initialLoadDoneRef.current = true;
+        } else {
+          setDbStatus("error");
         }
       } catch (e) {
         console.error("Gagal menarik data dari server:", e);
+        setDbStatus("error");
       } finally {
         setIsDataLoading(false);
       }
@@ -2542,6 +2592,8 @@ export default function App() {
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
             action: "syncData",
+            isReset: true, // izinkan total turun/ke-0 (reset sah dari user)
+            resetTarget: resetTarget, // "A" | "B" | "both"
             logs: newLogs,
             nodeA: newNodeAData,
             nodeB: newNodeBData,
@@ -3242,6 +3294,22 @@ export default function App() {
                   Offline Mode
                 </div>
               )}
+              {!isDemoMode && dbStatus !== "unknown" && (
+                <div
+                  title={dbStatus === "connected" ? "Terhubung ke database" : "Gagal terhubung ke database"}
+                  className={cn(
+                    "text-[10px] sm:text-xs font-semibold px-2 sm:px-2.5 py-1 rounded-full border flex items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0",
+                    dbStatus === "connected"
+                      ? "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800"
+                      : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800",
+                  )}
+                >
+                  <Database className="w-3 h-3 shrink-0" />
+                  <span className="hidden sm:inline">
+                    {dbStatus === "connected" ? "DB Terhubung" : "DB Gagal"}
+                  </span>
+                </div>
+              )}
               <div className="flex bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm rounded-lg items-center px-2.5 sm:px-3.5 py-1.5 gap-1.5 sm:gap-2 transition-colors w-full lg:w-auto justify-center lg:justify-start">
                 <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500 animate-[spin_4s_linear_infinite] shrink-0" />
                 <div className="flex flex-row items-center justify-center gap-1.5 sm:gap-2 text-gray-700 dark:text-gray-300 font-mono tabular-nums tracking-tight leading-tight truncate">
@@ -3493,7 +3561,7 @@ export default function App() {
                   <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
                     Jadwal: 18:00 ON — 06:00 OFF (DS3231)
                   </p>
-                  {!isDemoMode && selfTestA && (
+                  {!isDemoMode && selfTestA && nodeA.online && (
                     <div className="border-t border-gray-100 dark:border-gray-700 pt-2 mt-1">
                       <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">Status Hardware (boot test)</p>
                       <div className="flex flex-wrap gap-1">
@@ -3600,7 +3668,7 @@ export default function App() {
                   <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
                     Jadwal: 18:00 ON — 06:00 OFF (DS3231)
                   </p>
-                  {!isDemoMode && selfTestB && (
+                  {!isDemoMode && selfTestB && nodeB.online && (
                     <div className="border-t border-gray-100 dark:border-gray-700 pt-2 mt-1">
                       <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">Status Hardware (boot test)</p>
                       <div className="flex flex-wrap gap-1">
@@ -4858,6 +4926,53 @@ export default function App() {
                       : "Nonaktif — data baterai buffer diabaikan dashboard"}
                   </p>
                 </div>
+                {/* Jam Aktif Telegram */}
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Jam Aktif Perintah Telegram
+                  </label>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3">
+                    Di luar jam ini sensor <strong>tidak merespons perintah</strong> Telegram
+                    (hemat RAM &amp; prioritas deteksi). Notifikasi deteksi tetap jalan.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Mulai</span>
+                    <select
+                      value={tgWindow.start}
+                      onChange={(e) => {
+                        const w = { ...tgWindow, start: Number(e.target.value) };
+                        setTgWindow(w);
+                        publishTgWindow(w);
+                      }}
+                      className="text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 outline-none"
+                      aria-label="Jam mulai Telegram aktif"
+                    >
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Selesai</span>
+                    <select
+                      value={tgWindow.end}
+                      onChange={(e) => {
+                        const w = { ...tgWindow, end: Number(e.target.value) };
+                        setTgWindow(w);
+                        publishTgWindow(w);
+                      }}
+                      className="text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 outline-none"
+                      aria-label="Jam selesai Telegram aktif"
+                    >
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1.5">
+                    Perintah aktif {String(tgWindow.start).padStart(2, "0")}:00–
+                    {String(tgWindow.end).padStart(2, "0")}:00 WIB
+                    {tgWindow.start === tgWindow.end ? " (24 jam)" : ""}
+                  </p>
+                </div>
                 {/* Kontrol Relay Lampu */}
                 <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
@@ -5815,7 +5930,7 @@ export default function App() {
                     <>
                       <div className="flex items-start gap-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg p-3 text-xs text-violet-700 dark:text-violet-300">
                         <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                        <span>Jadwal dikirim ke sensor via MQTT. Sensor akan <strong>deep sleep</strong> di luar jadwal dan dibangunkan oleh pin SQW DS3231 → RST.</span>
+                        <span>Jadwal dikirim ke sensor via MQTT &amp; disimpan di EEPROM. Sensor <strong>selalu aktif</strong> (tanpa deep sleep) dan memakai jam <strong>DS3231</strong> untuk menyalakan/mematikan relay sesuai jadwal — tidak mengganggu deteksi sensor.</span>
                       </div>
 
                       {schedules.length === 0 && (

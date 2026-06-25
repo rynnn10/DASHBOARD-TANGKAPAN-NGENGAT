@@ -1,6 +1,6 @@
 // ============================================================
 // Backend Google Apps Script — Dashboard Tangkapan Ngengat
-// Terakhir diperbarui: Kamis, 25 Juni 2026 08:10 WIB
+// Terakhir diperbarui: Kamis, 25 Juni 2026 16:01 WIB
 // ============================================================
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -146,7 +146,7 @@ function doPost(e) {
         { p: "Ringkasan", h: ["Parameter", "Nilai"], c: "#4338ca" },
         { p: "Grafik", h: ["Waktu (Titik)", "Node A (365nm)", "Node B (395nm)"], c: "#1d4ed8" },
         { p: "Lingkungan", h: ["Waktu", "Node", "Suhu (°C)", "Kelembaban (%)", "Timestamp_ms"], c: "#0e7490" },
-        { p: "RataRataLingkungan", h: ["Waktu Update", "Avg Suhu A (°C)", "Avg Hum A (%)", "Avg Suhu B (°C)", "Avg Hum B (%)", "Total Data"], c: "#0f766e" },
+        { p: "RataRataLingkungan", h: ["Waktu Update", "Avg Suhu A (°C)", "Avg Hum A (%)", "Avg Suhu B (°C)", "Avg Hum B (%)"], c: "#0f766e" },
       ];
 
       var all = sheet.getSheets();
@@ -252,6 +252,10 @@ function doPost(e) {
         "Lingkungan_DataAsli",
         "RataRataLingkungan_Demo",
         "RataRataLingkungan_DataAsli",
+        "Efektivitas_Harian_Demo",
+        "Efektivitas_Harian_DataAsli",
+        "Log_Alarm_Demo",
+        "Log_Alarm_DataAsli",
       ];
       return exact.indexOf(name) !== -1;
     }
@@ -763,27 +767,69 @@ function doPost(e) {
       cleanupOldSheetsV2();
 
       // JIKA INI SINKRONISASI DARI WEB -> SIMPAN KE SHEET KONSOLIDASI (tag per user)
-      if (data.action === "syncData" && data.logs && data.logs.length > 0) {
+      if (data.action === "syncData" && data.logs) {
         var sL = getConsolidatedSheet(
           "Logs" + modeBase,
           ["ID", "Waktu", "Sumber Node", "Aksi Deteksi", "TimestampISO"],
           "#be123c",
         );
-        deleteUserRows(sL, partEmail);
-        var rL = data.logs.map(function (l) {
-          return [
-            l.id,
-            fmtWIB(l.timestamp), // waktu WIB eksplisit (perbaikan bug jam)
-            l.source,
-            l.action,
-            l.timestamp,
-          ];
-        });
-        // Urutkan terbaru → lama (kolom 5 = timestamp ms) agar data baru di atas
-        rL.sort(function (a, b) {
-          return Number(b[4]) - Number(a[4]);
-        });
-        appendUserRows(sL, partName, partEmail, rL);
+
+        if (data.isReset) {
+          // RESET sah dari user → bersihkan log node target (atau semua), lalu tulis sisanya.
+          // Kolom penuh: 1 Nama,2 Email,3 ID,4 Waktu,5 Sumber Node,6 Aksi,7 TimestampISO
+          var rt = String(data.resetTarget || "both");
+          if (sL.getLastRow() > 1) {
+            var lvR = sL.getDataRange().getValues();
+            var keepR = [lvR[0]];
+            var enR = String(partEmail).toLowerCase().trim();
+            for (var ri2 = 1; ri2 < lvR.length; ri2++) {
+              var isUserR = String(lvR[ri2][1]).toLowerCase().trim() === enR;
+              if (!isUserR) { keepR.push(lvR[ri2]); continue; }
+              if (rt === "both") continue; // hapus semua milik user
+              var srcR = String(lvR[ri2][4] || "");
+              var rowNode =
+                srcR.indexOf("365") !== -1 || /\bA\b|Node A/i.test(srcR) ? "A" :
+                srcR.indexOf("395") !== -1 || /\bB\b|Node B/i.test(srcR) ? "B" : "";
+              if (rowNode === rt) continue; // hapus baris node target
+              keepR.push(lvR[ri2]);
+            }
+            sL.getRange(2, 1, sL.getLastRow() - 1, lvR[0].length).clearContent();
+            if (keepR.length > 1)
+              sL.getRange(2, 1, keepR.length - 1, lvR[0].length)
+                .setValues(keepR.slice(1));
+          }
+        } else if (data.logs.length > 0) {
+          // MENUMPUK + DEDUP per ID — tiap deteksi disimpan permanen, tidak ditimpa.
+          var existingIds = {};
+          if (sL.getLastRow() > 1) {
+            var lv = sL.getRange(2, 1, sL.getLastRow() - 1, 3).getValues();
+            for (var li = 0; li < lv.length; li++) {
+              if (
+                String(lv[li][1]).toLowerCase().trim() ===
+                  String(partEmail).toLowerCase().trim() &&
+                lv[li][2] !== "" && lv[li][2] != null
+              )
+                existingIds[String(lv[li][2])] = true;
+            }
+          }
+          var rL = data.logs
+            .filter(function (l) {
+              return l.id != null && !existingIds[String(l.id)];
+            })
+            .map(function (l) {
+              return [
+                l.id,
+                fmtWIB(l.timestamp), // waktu WIB eksplisit (perbaikan bug jam)
+                l.source,
+                l.action,
+                l.timestamp,
+              ];
+            });
+          rL.sort(function (a, b) {
+            return Number(b[4]) - Number(a[4]);
+          });
+          prependUserRows(sL, partName, partEmail, rL);
+        }
       }
 
       // Sinkronisasi status node + ringkasan (tag per user)
@@ -793,11 +839,28 @@ function doPost(e) {
           ["Nama Node", "Total", "Status", "Baterai", "Tegangan", "LED"],
           "#047857",
         );
+        // PENGAMAN ANTI-HAPUS: baca total tersimpan. Tanpa reset sah (isReset),
+        // total TIDAK BOLEH turun → cegah sync stale (mis. 0 sebelum data termuat)
+        // menimpa angka tangkapan yang benar di database.
+        var storedA = 0, storedB = 0;
+        var prevStatus = readUserRows("Status" + modeBase, partEmail);
+        for (var psi = 0; psi < prevStatus.length; psi++) {
+          var pnm = String(prevStatus[psi][0] || "");
+          if (pnm.indexOf("A") !== -1 || pnm.indexOf("365") !== -1)
+            storedA = Number(prevStatus[psi][1]) || 0;
+          if (pnm.indexOf("B") !== -1 || pnm.indexOf("395") !== -1)
+            storedB = Number(prevStatus[psi][1]) || 0;
+        }
+        var incA = Number(data.nodeA.uv365) || 0;
+        var incB = Number(data.nodeB.uv395) || 0;
+        var finalA = data.isReset ? incA : Math.max(incA, storedA);
+        var finalB = data.isReset ? incB : Math.max(incB, storedB);
+
         deleteUserRows(sS, partEmail);
         appendUserRows(sS, partName, partEmail, [
           [
             "Node A (365nm)",
-            data.nodeA.uv365,
+            finalA,
             data.nodeA.online ? "Online" : "Offline",
             data.nodeA.battery,
             data.nodeA.voltage,
@@ -805,7 +868,7 @@ function doPost(e) {
           ],
           [
             "Node B (395nm)",
-            data.nodeB.uv395,
+            finalB,
             data.nodeB.online ? "Online" : "Offline",
             data.nodeB.battery,
             data.nodeB.voltage,
@@ -820,8 +883,8 @@ function doPost(e) {
         );
         deleteUserRows(sRing, partEmail);
         appendUserRows(sRing, partName, partEmail, [
-          ["Node A (365nm)", data.nodeA.uv365],
-          ["Node B (395nm)", data.nodeB.uv395],
+          ["Node A (365nm)", finalA],
+          ["Node B (395nm)", finalB],
         ]);
       }
 
@@ -857,6 +920,9 @@ function doPost(e) {
           ["Tanggal", "Hari", "Node A (365nm)", "Node B (395nm)", "Total"],
           "#9333ea",
         );
+        // Kolom Tanggal kini = "YYYY-MM-DD HH.mm" (tanggal + jam update terakhir WIB).
+        // Pencocokan upsert pakai 10 karakter pertama (bagian tanggal saja).
+        var nowHm = Utilities.formatDate(new Date(), "GMT+7", "HH.mm");
         // Peta tanggal → nomor baris (untuk user ini). Kolom: 1 Nama,2 Email,3 Tanggal..7 Total
         var effExisting = {};
         var effLastR = sEff.getLastRow();
@@ -868,18 +934,21 @@ function doPost(e) {
                 String(partEmail).toLowerCase().trim() &&
               effVals[ei][2]
             )
-              effExisting[String(effVals[ei][2])] = ei + 2;
+              effExisting[String(effVals[ei][2]).substring(0, 10)] = ei + 2;
           }
         }
         var effAppend = [];
         data.dailyEffect.forEach(function (e) {
           var a = Number(e.NodeA) || 0;
           var b = Number(e.NodeB) || 0;
-          var fullRow = [partName, partEmail, e.date, e.day, a, b, a + b];
+          var tanggalCell = e.date + " " + nowHm; // tanggal + jam update
           if (effExisting[e.date]) {
-            sEff.getRange(effExisting[e.date], 1, 1, 7).setValues([fullRow]);
+            // Tanggal sama → perbarui Tanggal(+jam) & angka (kol 3 Tanggal..7 Total)
+            sEff
+              .getRange(effExisting[e.date], 3, 1, 5)
+              .setValues([[tanggalCell, e.day, a, b, a + b]]);
           } else {
-            effAppend.push([e.date, e.day, a, b, a + b]);
+            effAppend.push([tanggalCell, e.day, a, b, a + b]);
           }
         });
         if (effAppend.length) {
@@ -952,8 +1021,10 @@ function doPost(e) {
           { re: /^[Gg]rafik_/, cols: 3, color: "#1d4ed8" },
           { re: /^Lingkungan(_Demo|_DataAsli)$/, cols: 7, color: "#0e7490" },
           { re: /^Lingkungan_/, cols: 5, color: "#0e7490" },
-          { re: /^RataRataLingkungan(_Demo|_DataAsli)$/, cols: 8, color: "#0f766e" },
-          { re: /^RataRataLingkungan_|^RataRata_/, cols: 6, color: "#0f766e" },
+          { re: /^RataRataLingkungan(_Demo|_DataAsli)$/, cols: 7, color: "#0f766e" },
+          { re: /^RataRataLingkungan_|^RataRata_/, cols: 5, color: "#0f766e" },
+          { re: /^Efektivitas_Harian(_Demo|_DataAsli)$/, cols: 7, color: "#9333ea" },
+          { re: /^Log_Alarm(_Demo|_DataAsli)$/, cols: 7, color: "#b45309" },
         ];
         sheet.getSheets().forEach(function(s) {
           if (s.getLastRow() < 1) return;
@@ -989,9 +1060,13 @@ function doPost(e) {
           led: false,
         };
         var ObjectLogs = [];
+        var logCountA = 0, logCountB = 0; // untuk self-heal total
         var logRows = readUserRows("Logs" + modeBase, partEmail);
         for (var i = 0; i < logRows.length; i++) {
           if (logRows[i][0]) {
+            var lsrc = String(logRows[i][2] || ""); // Sumber Node
+            if (lsrc.indexOf("365") !== -1 || lsrc.indexOf("A") !== -1) logCountA++;
+            else if (lsrc.indexOf("395") !== -1 || lsrc.indexOf("B") !== -1) logCountB++;
             ObjectLogs.push({
               id: logRows[i][0],
               timestamp: logRows[i][4] ? logRows[i][4] : Date.now(),
@@ -1019,6 +1094,10 @@ function doPost(e) {
             dataB.led = statusRows[i][5] === "Y";
           }
         }
+        // SELF-HEAL: total tak boleh lebih kecil dari jumlah deteksi tercatat di Logs.
+        // Jika Status sempat ke-0 tapi Logs masih ada, total dipulihkan otomatis.
+        if (logCountA > (Number(dataA.uv365) || 0)) dataA.uv365 = logCountA;
+        if (logCountB > (Number(dataB.uv395) || 0)) dataB.uv395 = logCountB;
 
         var ObjectChartData = [];
         var chartRows = readUserRows("Grafik" + modeBase, partEmail);
@@ -1050,15 +1129,16 @@ function doPost(e) {
         var ObjectToday = { date: todayKey, NodeA: 0, NodeB: 0 };
         var effRows = readUserRows("Efektivitas_Harian" + modeBase, partEmail);
         for (var i = 0; i < effRows.length; i++) {
-          if (!effRows[i][0]) continue; // kolom: 0 Tanggal,1 Hari,2 A,3 B,4 Total
+          if (!effRows[i][0]) continue; // kolom: 0 Tanggal(+jam),1 Hari,2 A,3 B,4 Total
+          var dDate = String(effRows[i][0]).substring(0, 10); // bagian tanggal saja
           var dEnt = {
-            date: effRows[i][0],
+            date: effRows[i][0], // tampilkan apa adanya (tanggal + jam)
             day: effRows[i][1],
             NodeA: Number(effRows[i][2]) || 0,
             NodeB: Number(effRows[i][3]) || 0,
           };
           ObjectDailyEffect.push(dEnt);
-          if (String(effRows[i][0]) === todayKey) {
+          if (dDate === todayKey) {
             ObjectToday.NodeA = dEnt.NodeA;
             ObjectToday.NodeB = dEnt.NodeB;
           }
@@ -1110,6 +1190,15 @@ function doPost(e) {
           B: { temp: avgArr(bT), hum: avgArr(bH), count: bT.length },
         };
 
+        // ── Bersihkan kolom "Total Data" lama jika sheet sudah terlanjur punya ────
+        var sRataOld = sheet.getSheetByName("RataRataLingkungan" + modeBase);
+        if (sRataOld && sRataOld.getLastColumn() >= 8) {
+          var lastHdr = sRataOld.getRange(1, sRataOld.getLastColumn()).getValue();
+          if (String(lastHdr).indexOf("Total Data") !== -1) {
+            sRataOld.deleteColumn(sRataOld.getLastColumn());
+          }
+        }
+
         // ── Simpan rata-rata ke sheet konsolidasi RataRataLingkungan (1 baris/user) ────
         var sRata = getConsolidatedSheet(
           "RataRataLingkungan" + modeBase,
@@ -1119,19 +1208,17 @@ function doPost(e) {
             "Avg Hum A (%)",
             "Avg Suhu B (°C)",
             "Avg Hum B (%)",
-            "Total Data",
           ],
           "#0f766e",
         );
         deleteUserRows(sRata, partEmail);
         appendUserRows(sRata, partName, partEmail, [
           [
-            new Date().toLocaleString("id-ID"),
+            fmtWIB(Date.now()),
             rataRata.A.temp,
             rataRata.A.hum,
             rataRata.B.temp,
             rataRata.B.hum,
-            ObjectLingkungan.length,
           ],
         ]);
 
@@ -1246,6 +1333,10 @@ function scanUnusedSheets() {
     "Lingkungan_DataAsli",
     "RataRataLingkungan_Demo",
     "RataRataLingkungan_DataAsli",
+    "Efektivitas_Harian_Demo",
+    "Efektivitas_Harian_DataAsli",
+    "Log_Alarm_Demo",
+    "Log_Alarm_DataAsli",
   ];
   var unusedSheets = [];
   var usedSheets = [];
