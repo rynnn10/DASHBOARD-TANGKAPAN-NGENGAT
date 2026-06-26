@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Kamis, 25 Juni 2026 17:50 WIB
+// Terakhir diperbarui: Jumat, 26 Juni 2026 11:16 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -357,6 +357,43 @@ function computeDailyEffect(
         NodeB: map[dk].NodeB,
       };
     });
+}
+
+// Tampilan WiFi node: SSID + ikon batang sinyal (1–4 bar) + nilai dBm.
+// Level RSSI: ≥−60 kuat penuh, ≥−67 baik, ≥−75 sedang, ≥−85 lemah.
+function WifiSignal({ ssid, rssi }: { ssid?: string; rssi?: number }) {
+  if (rssi === undefined || rssi === 0) return null;
+  const level =
+    rssi >= -60 ? 4 : rssi >= -67 ? 3 : rssi >= -75 ? 2 : rssi >= -85 ? 1 : 0;
+  const barColor =
+    level >= 3 ? "bg-emerald-500" : level === 2 ? "bg-yellow-500" : "bg-red-500";
+  return (
+    <div className="flex justify-between items-center text-sm">
+      <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+        <Wifi className="w-3.5 h-3.5" /> WiFi
+      </span>
+      <span className="font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+        <span className="truncate max-w-[90px]" title={ssid}>
+          {ssid || "-"}
+        </span>
+        <span className="flex items-end gap-[2px] h-3.5">
+          {[1, 2, 3, 4].map((i) => (
+            <span
+              key={i}
+              className={cn(
+                "w-1 rounded-sm",
+                i <= level ? barColor : "bg-gray-200 dark:bg-gray-700",
+              )}
+              style={{ height: `${i * 25}%` }}
+            />
+          ))}
+        </span>
+        <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
+          {rssi} dBm
+        </span>
+      </span>
+    </div>
+  );
 }
 
 function buildDhtChartFromHistory(
@@ -876,7 +913,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Kamis, 25 Juni 2026 17:50 WIB";
+const LAST_UPDATED = "Jumat, 26 Juni 2026 11:16 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -1344,13 +1381,13 @@ export default function App() {
   // Data States
   const [nodeA, setNodeA] = useState(() =>
     isDemoMode
-      ? { uv365: 142, online: true, battery: 85, voltage: 13.6, led: true }
-      : { uv365: 0, online: false, battery: 0, voltage: 0, led: false },
+      ? { uv365: 142, online: true, battery: 85, voltage: 13.6, led: true, ssid: "Kepo", rssi: -58 }
+      : { uv365: 0, online: false, battery: 0, voltage: 0, led: false, ssid: "", rssi: 0 },
   );
   const [nodeB, setNodeB] = useState(() =>
     isDemoMode
-      ? { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true }
-      : { uv395: 0, online: false, battery: 0, voltage: 0, led: false },
+      ? { uv395: 98, online: true, battery: 62, voltage: 13.1, led: true, ssid: "Kepo", rssi: -71 }
+      : { uv395: 0, online: false, battery: 0, voltage: 0, led: false, ssid: "", rssi: 0 },
   );
   // Self-test hardware status (dikirim dari firmware saat boot via MQTT)
   const [selfTestA, setSelfTestA] = useState<{ir_ok:boolean;dht_ok:boolean;rtc_ok:boolean;relay_ok:boolean;temp:number;hum:number;rtcTime:string} | null>(null);
@@ -1599,6 +1636,8 @@ export default function App() {
             voltage: Number(parseFloat(payload.voltage).toFixed(2)),
             online: true,
             ...(payload.relay !== undefined && { led: payload.relay }),
+            ...(payload.ssid !== undefined && { ssid: String(payload.ssid) }),
+            ...(payload.rssi !== undefined && { rssi: Number(payload.rssi) }),
           };
           if (payload.node === "B") {
             setNodeB((prev) => ({ ...prev, ...batteryData }));
@@ -2074,8 +2113,8 @@ export default function App() {
   useEffect(() => {
     if (!isDemoMode || !userProfile) {
       setLogs([]);
-      setNodeA({ uv365: 0, online: false, battery: 0, voltage: 0, led: false });
-      setNodeB({ uv395: 0, online: false, battery: 0, voltage: 0, led: false });
+      setNodeA({ uv365: 0, online: false, battery: 0, voltage: 0, led: false, ssid: "", rssi: 0 });
+      setNodeB({ uv395: 0, online: false, battery: 0, voltage: 0, led: false, ssid: "", rssi: 0 });
       setDhtData({ A: null, B: null });
       setDhtHistoryAll([]);
       return;
@@ -2186,6 +2225,8 @@ export default function App() {
       battery: 85,
       voltage: 13.6,
       led: true,
+      ssid: "Kepo",
+      rssi: -58,
     });
     setNodeB({
       uv395: 98,
@@ -2193,6 +2234,8 @@ export default function App() {
       battery: 62,
       voltage: 13.1,
       led: true,
+      ssid: "Kepo",
+      rssi: -71,
     });
   }, [isDemoMode, userProfile]);
 
@@ -3620,15 +3663,20 @@ export default function App() {
                     <span
                       className={cn(
                         "font-bold flex items-center gap-1",
-                        nodeA.led
-                          ? "text-yellow-600 dark:text-yellow-400"
-                          : "text-gray-400",
+                        !nodeA.online
+                          ? "text-gray-400 dark:text-gray-500"
+                          : nodeA.led
+                            ? "text-yellow-600 dark:text-yellow-400"
+                            : "text-gray-400",
                       )}
                     >
                       <Lightbulb className="w-4 h-4" />{" "}
-                      {nodeA.led ? "Menyala" : "Mati"}
+                      {!nodeA.online ? "Tidak diketahui" : nodeA.led ? "Menyala" : "Mati"}
                     </span>
                   </div>
+                  {nodeA.online && (
+                    <WifiSignal ssid={nodeA.ssid} rssi={nodeA.rssi} />
+                  )}
                   <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
                     Jadwal: 18:00 ON — 06:00 OFF (DS3231)
                   </p>
@@ -3727,15 +3775,20 @@ export default function App() {
                     <span
                       className={cn(
                         "font-bold flex items-center gap-1",
-                        nodeB.led
-                          ? "text-yellow-600 dark:text-yellow-400"
-                          : "text-gray-400",
+                        !nodeB.online
+                          ? "text-gray-400 dark:text-gray-500"
+                          : nodeB.led
+                            ? "text-yellow-600 dark:text-yellow-400"
+                            : "text-gray-400",
                       )}
                     >
                       <Lightbulb className="w-4 h-4" />{" "}
-                      {nodeB.led ? "Menyala" : "Mati"}
+                      {!nodeB.online ? "Tidak diketahui" : nodeB.led ? "Menyala" : "Mati"}
                     </span>
                   </div>
+                  {nodeB.online && (
+                    <WifiSignal ssid={nodeB.ssid} rssi={nodeB.rssi} />
+                  )}
                   <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
                     Jadwal: 18:00 ON — 06:00 OFF (DS3231)
                   </p>
