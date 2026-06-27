@@ -21,20 +21,22 @@ Dashboard monitoring real-time sistem light trap penangkapan ngengat berbasis Io
 │  │  Baterai (A0)    │        │  Baterai (A0)    │          │
 │  └────────┬─────────┘        └────────┬─────────┘          │
 └───────────┼──────────────────────────┼────────────────────┘
-            │ MQTT TCP 1883            │ MQTT TCP 1883
+            │ MQTT 1883 (publik) /     │ 8883 TLS (HiveMQ Cloud)
             ▼                          ▼
      ┌──────────────────────────────────────┐
-     │        HiveMQ Public Broker          │
-     │        broker.hivemq.com             │
+     │   MQTT Broker (dapat dikonfigurasi)  │
+     │   • broker.hivemq.com (publik)       │
+     │   • HiveMQ Cloud (auth + TLS) ✅      │
      └──────────┬───────────────────────────┘
-                │ MQTT WSS 8884
+                │ MQTT WSS 8884 (+auth)
                 ▼
      ┌──────────────────────────────────────┐
      │     Dashboard Web (React + Vite)     │
      │  • Grafik fluktuasi & DHT            │
-     │  • Status baterai & relay live       │
+     │  • Status baterai/relay/sinyal WiFi  │
+     │  • Online via MQTT LWT + badge DB    │
      │  • Log deteksi & ekspor Excel        │
-     │  • Kontrol relay via tombol          │
+     │  • Kontrol relay + reset total       │
      │  • Sinkronisasi Google Sheets        │
      └──────────┬───────────────────────────┘
                 │ HTTPS doPost
@@ -44,8 +46,8 @@ Dashboard monitoring real-time sistem light trap penangkapan ngengat berbasis Io
      │   Google Sheets sebagai database     │
      └──────────────────────────────────────┘
 
-     NodeMCU ──HTTPS──► Telegram Bot API
-     (notifikasi deteksi & relay, kontrol /relayon /relayoff)
+     NodeMCU ──HTTPS(TLS)──► Telegram Bot API
+     (notif deteksi/relay/baterai, kontrol /status /relayon /relayoff /auto)
 ```
 
 ---
@@ -57,8 +59,9 @@ Dashboard monitoring real-time sistem light trap penangkapan ngengat berbasis Io
 - Grafik **Suhu & Kelembaban** (DHT22) per node — rentang waktu identik dengan grafik fluktuasi
 - **Status baterai** tegangan (V) dan persentase tiap node secara live
 - **Status relay** ON/OFF tiap node dengan indikator visual
-- **Online/Offline** node dideteksi via heartbeat MQTT (timeout 15 detik)
-- **Jumlah tangkapan total** per node dalam sesi berjalan
+- **Online/Offline** node dari **MQTT LWT** (Last Will — koneksi MQTT asli node, bukan tebakan)
+- **SSID & kekuatan sinyal WiFi** + **status hardware (boot test)** per node
+- **Jumlah tangkapan** per node (total tersimpan + total hari ini)
 
 ### Kontrol & Manajemen
 - **Kontrol relay** Node A & Node B langsung dari popup Pengaturan via MQTT
@@ -177,21 +180,32 @@ lib_deps =
     bblanchon/ArduinoJson@^6.21.3
 ```
 
-### Konfigurasi Sebelum Upload
+### Konfigurasi Kredensial (`secrets.h`)
 
-Edit bagian ini di `src/main.cpp`:
+> 🆕 **Penting:** kredensial **tidak lagi ditulis di `main.cpp`**, melainkan di file terpisah **`src/secrets.h`** yang sudah masuk `.gitignore` (tidak ikut ter-commit ke repo).
+
+1. Salin template → buat file rahasia:
+   `src/secrets.h.example` ➜ **`src/secrets.h`**
+2. Isi nilainya (lakukan untuk **kedua** project, Node A & Node B):
 
 ```cpp
-// WiFi
-const char* ssid     = "NamaWiFiAnda";
-const char* password = "PasswordWiFi";
+#define SECRET_WIFI_SSID  "NamaWiFiAnda"
+#define SECRET_WIFI_PASS  "PasswordWiFi"
 
-// Telegram (opsional — kosongkan placeholder jika tidak pakai)
-#define BOT_TOKEN  "token_dari_botfather"
-#define CHAT_ID    "chat_id_dari_userinfobot"
+// ── MQTT broker (default = broker publik; lihat Tutorial HiveMQ Cloud di bawah) ──
+#define SECRET_MQTT_TLS   0                    // 0 = tanpa TLS, 1 = HiveMQ Cloud (TLS)
+#define SECRET_MQTT_HOST  "broker.hivemq.com"  // ⟶ "xxxx.s1.eu.hivemq.cloud"
+#define SECRET_MQTT_PORT  1883                 // ⟶ 8883 untuk HiveMQ Cloud
+#define SECRET_MQTT_USER  ""                   // ⟶ username cluster
+#define SECRET_MQTT_PASS  ""                   // ⟶ password cluster
+
+// ── Telegram (opsional) ──
+#define SECRET_TG_BOT_TOKEN  "token_dari_botfather"
+#define SECRET_TG_CHAT_ID    "chat_id_dari_userinfobot"
 ```
 
-> Jika `BOT_TOKEN` tetap `"YOUR_BOT_TOKEN_HERE"`, fitur Telegram dinonaktifkan otomatis saat boot.
+> ⚠️ Jika `secrets.h` belum dibuat, **compile akan gagal** — wajib disalin dari `.example` lebih dulu.
+> Jika token Telegram dibiarkan placeholder, fitur Telegram dinonaktifkan otomatis saat boot.
 
 ### Cara Upload Firmware
 
@@ -245,6 +259,32 @@ File `kode.gs` dideploy sebagai **Web App** di Google Apps Script — berfungsi 
 5. Salin URL deployment
 6. Paste di kolom **URL Google Sheet** di pengaturan dashboard (mode Data Asli)
 
+### 🔄 Sinkronisasi Otomatis via `clasp` (opsional)
+
+Agar `kode.gs` lokal langsung tersinkron ke Apps Script tanpa copy-paste manual:
+
+**Setup sekali:**
+1. Aktifkan **Apps Script API**: https://script.google.com/home/usersettings → ON
+2. `npm install` (clasp sudah jadi devDependency) lalu **login**: `npx clasp login`
+3. Salin **Script ID** (Apps Script → ⚙️ Project Settings) ke file `.clasp.json`:
+   - `cp .clasp.json.example .clasp.json` → isi `scriptId`
+4. Salin **Deployment ID** (Deploy → Manage deployments) → isi `CLASP_DEPLOYMENT_ID` di file **`.env`** (gitignored):
+   ```ini
+   CLASP_DEPLOYMENT_ID=AKfycb...
+   ```
+   > Deployment ID = bagian token pada URL Web App: `.../macros/s/<INI>/exec`. Skrip `gas:deploy` membacanya dari `.env`, jadi **tidak ditulis di `package.json`**.
+
+**Pemakaian:**
+```bash
+npm run gas:push     # upload kode.gs ke Apps Script (editor)
+npm run gas:watch    # auto-upload tiap kali kode.gs disimpan
+npm run gas:deploy   # push + update deployment (URL Web App TETAP sama)
+```
+
+> ⚠️ `gas:push` hanya update **editor** Apps Script. Live Web App baru berubah setelah `gas:deploy` (atau redeploy manual).
+> ⚠️ **Push pertama menimpa kode online** dengan `kode.gs` lokal — pastikan lokal sudah versi terbaru. `.clasp.json` & manifest `appsscript.json` mengatur scriptId & setting Web App (Execute as Me, Akses Anyone).
+> ⚠️ Deploy ke **deployment ID yang ada** (`-i`) menjaga URL tetap sama; tanpa itu, tiap deploy membuat URL baru.
+
 ### Sheet yang Dibuat Otomatis
 
 | Sheet | Isi |
@@ -275,6 +315,23 @@ npm install
 npm run dev
 # → http://localhost:3000
 ```
+
+### Konfigurasi `.env` (Dashboard)
+
+> 🆕 URL backend & broker MQTT dibaca dari **environment variables** (file `.env` di root project, sudah `.gitignore`). Buat file `.env`:
+
+```ini
+# Backend Google Apps Script
+VITE_GAS_URL=https://script.google.com/macros/s/XXXX/exec
+
+# MQTT broker — kosongkan untuk pakai broker publik default.
+# Untuk HiveMQ Cloud (lihat tutorial di bawah):
+VITE_MQTT_URL=wss://xxxx.s1.eu.hivemq.cloud:8884/mqtt
+VITE_MQTT_USER=username_cluster
+VITE_MQTT_PASS=password_cluster
+```
+
+> Variabel `VITE_*` di-inline saat **build**. Jalankan ulang `npm run dev` / `npm run build` setelah mengubah `.env`.
 
 ### Build Production
 
@@ -315,15 +372,88 @@ DASHBOARD-TANGKAPAN-NGENGAT/
 | Frontend | React 19 + TypeScript + Vite |
 | Styling | Tailwind CSS v4 |
 | Chart | Recharts |
-| MQTT (browser) | mqtt.js (WSS 8884) |
+| MQTT (browser) | mqtt.js (WSS 8884, + username/password) |
 | PWA | vite-plugin-pwa |
 | Icons | Lucide React |
 | Export Excel | SheetJS (xlsx) |
 | Firmware | Arduino / PlatformIO (ESP8266) |
-| Komunikasi IoT | MQTT via HiveMQ public broker |
+| MQTT (ESP) | PubSubClient — TCP 1883 (publik) / TLS 8883 (HiveMQ Cloud) |
+| Komunikasi IoT | MQTT — broker publik **atau** HiveMQ Cloud (auth + TLS) |
+| Kredensial | `secrets.h` (firmware) & `.env` (web) — di luar repo |
 | Database | Google Sheets via Apps Script |
-| Notifikasi | Telegram Bot (UniversalTelegramBot) |
+| Notifikasi | Telegram Bot (UniversalTelegramBot, parse mode HTML) |
 | Deploy | GitHub Pages (branch gh-pages) |
+
+---
+
+## 🔐 Tutorial: Migrasi ke HiveMQ Cloud (Auth + TLS)
+
+Secara default sistem memakai **broker publik** `broker.hivemq.com` (tanpa autentikasi — siapa pun bisa mengintip/memalsukan topik). Untuk lebih aman, pindah ke **HiveMQ Cloud** (gratis) yang mendukung username/password + TLS.
+
+### A. Buat Cluster
+1. Daftar di **https://console.hivemq.cloud** (gratis, tanpa kartu kredit).
+2. **Create Cluster** → paket **Serverless (Free)** → tunggu status **Running**.
+3. Catat **Cluster URL (Host)**, mis. `15110d5cd284483caac8b614ac358354.s1.eu.hivemq.cloud`.
+
+### B. Buat Kredensial
+- Tab **Access Management / Credentials** → **Add** → isi **Username** & **Password** (izin **Publish & Subscribe**).
+
+### C. Port yang dipakai
+| Port | Protokol | Untuk |
+|---|---|---|
+| **8883** | MQTT over TLS (TCP) | **Firmware ESP** |
+| **8884** | MQTT over WebSocket Secure | **Dashboard web** (`wss://...:8884/mqtt`) |
+
+### D. Konfigurasi Firmware (`secrets.h`, kedua node)
+```cpp
+#define SECRET_MQTT_TLS   1                                          // aktifkan TLS
+#define SECRET_MQTT_HOST  "xxxx.s1.eu.hivemq.cloud"                  // host cluster Anda
+#define SECRET_MQTT_PORT  8883
+#define SECRET_MQTT_USER  "username_cluster"
+#define SECRET_MQTT_PASS  "password_cluster"
+```
+Lalu **flash ulang** kedua ESP. Saat `TLS=1`, firmware otomatis memakai `WiFiClientSecure` + buffer kecil (MFLN) agar muat di RAM ESP8266.
+
+### E. Konfigurasi Dashboard (`.env`)
+```ini
+VITE_MQTT_URL=wss://xxxx.s1.eu.hivemq.cloud:8884/mqtt
+VITE_MQTT_USER=username_cluster
+VITE_MQTT_PASS=password_cluster
+```
+Lalu `npm run deploy`. **Firmware & web wajib pakai cluster yang sama.**
+
+### F. Verifikasi
+- Serial ESP: `MQTT terhubung!` (ke cluster TLS).
+- Web: kedua node **Online**, deteksi masuk realtime.
+- Console HiveMQ → **Web Client** → subscribe `dashboard/ngengat/#` → lihat pesan ESP.
+
+### Troubleshooting
+| Gejala | Solusi |
+|---|---|
+| `rc=-2` berulang | Host/port salah (host tanpa `wss://`, port 8883). |
+| `rc=4` / `rc=5` | Username/password salah. |
+| ESP restart/crash | RAM kurang (2 TLS). Pantau monitor RAM di serial; bila perlu nonaktifkan Telegram. |
+| Web tak konek | Pakai port **8884** + awalan `wss://` + akhiran `/mqtt`. |
+
+> ⚠️ Kredensial pada dashboard ikut ke **bundle publik** (terlihat saat inspect) — broker auth tetap jauh lebih aman dari broker publik, namun untuk rahasia penuh perlu proxy/backend.
+
+---
+
+## 🆕 Pembaruan Terbaru
+
+| Area | Perubahan |
+|---|---|
+| **Keamanan** | Kredensial dipindah ke `secrets.h` (firmware) & `.env` (web) — tidak ter-commit. Dukungan **MQTT auth + TLS** (HiveMQ Cloud). |
+| **Akurasi data** | **ID deteksi stabil** (`did = node-bootRand-seq`) dari firmware → cegah hitungan ganda saat dibuka di banyak device. Pengaman anti-hapus & self-heal total dari Logs. |
+| **Sensor IR** | Deteksi via **interrupt** + debounce → tak terlewat saat sibuk; diagnostic tepi sensor di serial. |
+| **Status node** | Online/offline kini dari **MQTT LWT** (koneksi asli), bukan tebakan heartbeat. Relay tampil **"Tidak diketahui"** saat node offline. |
+| **Waktu** | Sinkronisasi **NTP non-blocking** + koreksi RTC ke WIB. Format waktu WIB eksplisit di sheet. |
+| **Telegram** | Pesan pakai **HTML** (lebih kokoh dari MarkdownV2). Total = **tangkapan hari ini**; jam aktif perintah dapat diatur dari web. Prioritas: deteksi & relay selalu didahulukan. |
+| **Database** | Sheet **`Efektivitas_Harian`** (total/hari/node) & **`Log_Alarm`** (eksekusi alarm). Validasi sesi via **`Log_Login`** (hapus baris → device login ulang). |
+| **Dashboard** | Badge **DB Terhubung/Gagal**, **SSID + kekuatan sinyal WiFi** per node, status hardware boot-test, **reset total opsional** (hapus semua data sheet kecuali akun), jam aktif Telegram. |
+| **Identitas** | Hostname per node (`Sensor-Ngengat-NodeA/B`) tampil di router. |
+
+> Detail tiap perubahan ada di komentar kode `main.cpp`, `App.tsx`, dan `kode.gs`.
 
 ---
 
