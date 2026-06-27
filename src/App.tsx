@@ -1,6 +1,6 @@
 // ============================================================
 // Dashboard Tangkapan Ngengat — Aplikasi utama (React)
-// Terakhir diperbarui: Jumat, 26 Juni 2026 11:16 WIB
+// Terakhir diperbarui: Sabtu, 27 Juni 2026 12:07 WIB
 // ============================================================
 import React, { useState, useEffect } from "react";
 import {
@@ -82,6 +82,17 @@ const safeParseDate = (dateStr: any) => {
 };
 
 const SCRIPT_URL = import.meta.env.VITE_GAS_URL || "";
+
+// ── KONFIGURASI MQTT BROKER ─────────────────────────────────────────────
+// Default: broker publik lama (tanpa auth). Untuk HiveMQ Cloud (auth+TLS):
+//   MQTT_URL  = "wss://<cluster>.s1.eu.hivemq.cloud:8884/mqtt"
+//   MQTT_USER = "username_cluster", MQTT_PASS = "password_cluster"
+// CATATAN: nilai ini ikut ke bundle publik (terlihat saat inspect) — wajar untuk skala hobi.
+// Bisa diisi via env (VITE_MQTT_*) atau langsung di sini.
+const MQTT_URL =
+  import.meta.env.VITE_MQTT_URL || "wss://broker.hivemq.com:8884/mqtt";
+const MQTT_USER = import.meta.env.VITE_MQTT_USER || "";
+const MQTT_PASS = import.meta.env.VITE_MQTT_PASS || "";
 
 // POST ke GAS dengan auto-retry — atasi "gagal menghubungi server" akibat cold
 // start Apps Script (request pertama lambat / sempat balas non-JSON). Coba ulang
@@ -913,7 +924,7 @@ const ImageUpload = ({
 };
 
 // Stempel waktu update terakhir — diperbarui setiap ada perubahan pada web
-const LAST_UPDATED = "Jumat, 26 Juni 2026 11:16 WIB";
+const LAST_UPDATED = "Sabtu, 27 Juni 2026 12:07 WIB";
 
 export default function App() {
   // Deteksi Service Worker update — tampilkan banner refresh ke user
@@ -1015,6 +1026,8 @@ export default function App() {
   const [resetScope, setResetScope] = useState<"dashboard" | "both">(
     "dashboard",
   );
+  // Opsi: reset juga membersihkan SEMUA sheet data (logs, grafik, lingkungan, dll)
+  const [resetAllData, setResetAllData] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isLogResetModalOpen, setIsLogResetModalOpen] = useState(false);
@@ -1512,7 +1525,10 @@ export default function App() {
 
     import("mqtt").then(({ default: mqttLib }) => {
       if (cancelled) return;
-      const client = mqttLib.connect("wss://broker.hivemq.com:8884/mqtt");
+      const client = mqttLib.connect(
+        MQTT_URL,
+        MQTT_USER ? { username: MQTT_USER, password: MQTT_PASS } : undefined,
+      );
       mqttClientRef.current = client;
 
     client.on("connect", () => {
@@ -1584,7 +1600,11 @@ export default function App() {
             setLogs((prevLogs) =>
               [
                 {
-                  id: Date.now() + Math.random().toString(36).substr(2, 9),
+                  // ID stabil dari firmware (did) → deteksi sama dari banyak device
+                  // pakai ID yang sama → dedup di DB bekerja, cegah hitungan ganda.
+                  id:
+                    payload.did ||
+                    Date.now() + Math.random().toString(36).substr(2, 9),
                   timestamp:
                     payload.buffered === true && payload.ts
                       ? payload.ts * 1000
@@ -1607,7 +1627,11 @@ export default function App() {
             setLogs((prevLogs) =>
               [
                 {
-                  id: Date.now() + Math.random().toString(36).substr(2, 9),
+                  // ID stabil dari firmware (did) → deteksi sama dari banyak device
+                  // pakai ID yang sama → dedup di DB bekerja, cegah hitungan ganda.
+                  id:
+                    payload.did ||
+                    Date.now() + Math.random().toString(36).substr(2, 9),
                   timestamp:
                     payload.buffered === true && payload.ts
                       ? payload.ts * 1000
@@ -2685,6 +2709,7 @@ export default function App() {
             action: "syncData",
             isReset: true, // izinkan total turun/ke-0 (reset sah dari user)
             resetTarget: resetTarget, // "A" | "B" | "both"
+            fullWipe: resetAllData, // bersihkan SEMUA sheet data user (kecuali Users)
             logs: newLogs,
             nodeA: newNodeAData,
             nodeB: newNodeBData,
@@ -6321,8 +6346,8 @@ export default function App() {
               e.target === e.currentTarget && setIsResetModalOpen(false)
             }
           >
-            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50">
+            <div className="bg-white dark:bg-gray-800 w-[90%] max-w-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 shrink-0">
                 <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
                   <RotateCcw className="w-5 h-5 text-orange-500" />
                   Reset Tangkapan
@@ -6334,7 +6359,7 @@ export default function App() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-5 space-y-5">
+              <div className="p-5 space-y-5 overflow-y-auto">
                 <div>
                   <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                     Pilih Node yang Direset
@@ -6463,6 +6488,28 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+
+                {/* Opsi: hapus juga seluruh sheet data (hanya relevan jika DB ikut) */}
+                {resetScope === "both" && (
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl border-2 border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/15 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={resetAllData}
+                      onChange={(e) => setResetAllData(e.target.checked)}
+                      className="accent-red-500 mt-0.5"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                        Hapus juga SEMUA data sheet
+                      </p>
+                      <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
+                        Membersihkan Logs, Grafik, Lingkungan, Rata-rata, Efektivitas
+                        Harian, &amp; Log Alarm milik Anda. Akun &amp; pengaturan tetap
+                        aman. Tidak dapat dibatalkan.
+                      </p>
+                    </div>
+                  </label>
+                )}
 
                 <button
                   onClick={() => setIsResetConfirmOpen(true)}

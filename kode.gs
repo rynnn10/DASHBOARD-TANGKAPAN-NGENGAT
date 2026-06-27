@@ -1,6 +1,6 @@
 // ============================================================
 // Backend Google Apps Script — Dashboard Tangkapan Ngengat
-// Terakhir diperbarui: Kamis, 25 Juni 2026 17:50 WIB
+// Terakhir diperbarui: Sabtu, 27 Juni 2026 12:07 WIB
 // ============================================================
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -795,6 +795,25 @@ function doPost(e) {
       // Migrasi sekali dari skema per-email lama → konsolidasi, lalu bersihkan sheet lama
       migrateConsolidatedV2();
       cleanupOldSheetsV2();
+
+      // RESET TOTAL (fullWipe) — hapus baris user di SEMUA sheet data, sisakan akun.
+      // Dijalankan SEBELUM tulis-ulang reset agar sheet benar-benar bersih.
+      if (data.action === "syncData" && data.isReset && data.fullWipe) {
+        var wipeSheets = [
+          "Logs" + modeBase,
+          "Status" + modeBase,
+          "Ringkasan" + modeBase,
+          "Grafik" + modeBase,
+          "Lingkungan" + modeBase,
+          "RataRataLingkungan" + modeBase,
+          "Efektivitas_Harian" + modeBase,
+          "Log_Alarm" + modeBase,
+        ];
+        wipeSheets.forEach(function (nm) {
+          var sw = sheet.getSheetByName(nm);
+          if (sw) deleteUserRows(sw, partEmail);
+        });
+      }
 
       // JIKA INI SINKRONISASI DARI WEB -> SIMPAN KE SHEET KONSOLIDASI (tag per user)
       if (data.action === "syncData" && data.logs) {
