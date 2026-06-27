@@ -268,7 +268,11 @@ Agar `kode.gs` lokal langsung tersinkron ke Apps Script tanpa copy-paste manual:
 2. `npm install` (clasp sudah jadi devDependency) lalu **login**: `npx clasp login`
 3. Salin **Script ID** (Apps Script → ⚙️ Project Settings) ke file `.clasp.json`:
    - `cp .clasp.json.example .clasp.json` → isi `scriptId`
-4. Salin **Deployment ID** (Deploy → Manage deployments) → ganti `PASTE_DEPLOYMENT_ID` di skrip `gas:deploy` (package.json).
+4. Salin **Deployment ID** (Deploy → Manage deployments) → isi `CLASP_DEPLOYMENT_ID` di file **`.env`** (gitignored):
+   ```ini
+   CLASP_DEPLOYMENT_ID=AKfycb...
+   ```
+   > Deployment ID = bagian token pada URL Web App: `.../macros/s/<INI>/exec`. Skrip `gas:deploy` membacanya dari `.env`, jadi **tidak ditulis di `package.json`**.
 
 **Pemakaian:**
 ```bash

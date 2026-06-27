@@ -14,7 +14,7 @@
     "deploy": "gh-pages -d dist",
     "gas:push": "clasp push -f",
     "gas:watch": "clasp push -f --watch",
-    "gas:deploy": "clasp push -f && clasp deploy -i PASTE_DEPLOYMENT_ID -d \"auto deploy\""
+    "gas:deploy": "node scripts/gas-deploy.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
