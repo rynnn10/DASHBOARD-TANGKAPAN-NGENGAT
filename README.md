@@ -21,20 +21,22 @@ Dashboard monitoring real-time sistem light trap penangkapan ngengat berbasis Io
 │  │  Baterai (A0)    │        │  Baterai (A0)    │          │
 │  └────────┬─────────┘        └────────┬─────────┘          │
 └───────────┼──────────────────────────┼────────────────────┘
-            │ MQTT TCP 1883            │ MQTT TCP 1883
+            │ MQTT 1883 (publik) /     │ 8883 TLS (HiveMQ Cloud)
             ▼                          ▼
      ┌──────────────────────────────────────┐
-     │        HiveMQ Public Broker          │
-     │        broker.hivemq.com             │
+     │   MQTT Broker (dapat dikonfigurasi)  │
+     │   • broker.hivemq.com (publik)       │
+     │   • HiveMQ Cloud (auth + TLS) ✅      │
      └──────────┬───────────────────────────┘
-                │ MQTT WSS 8884
+                │ MQTT WSS 8884 (+auth)
                 ▼
      ┌──────────────────────────────────────┐
      │     Dashboard Web (React + Vite)     │
      │  • Grafik fluktuasi & DHT            │
-     │  • Status baterai & relay live       │
+     │  • Status baterai/relay/sinyal WiFi  │
+     │  • Online via MQTT LWT + badge DB    │
      │  • Log deteksi & ekspor Excel        │
-     │  • Kontrol relay via tombol          │
+     │  • Kontrol relay + reset total       │
      │  • Sinkronisasi Google Sheets        │
      └──────────┬───────────────────────────┘
                 │ HTTPS doPost
@@ -44,8 +46,8 @@ Dashboard monitoring real-time sistem light trap penangkapan ngengat berbasis Io
      │   Google Sheets sebagai database     │
      └──────────────────────────────────────┘
 
-     NodeMCU ──HTTPS──► Telegram Bot API
-     (notifikasi deteksi & relay, kontrol /relayon /relayoff)
+     NodeMCU ──HTTPS(TLS)──► Telegram Bot API
+     (notif deteksi/relay/baterai, kontrol /status /relayon /relayoff /auto)
 ```
 
 ---
@@ -57,8 +59,9 @@ Dashboard monitoring real-time sistem light trap penangkapan ngengat berbasis Io
 - Grafik **Suhu & Kelembaban** (DHT22) per node — rentang waktu identik dengan grafik fluktuasi
 - **Status baterai** tegangan (V) dan persentase tiap node secara live
 - **Status relay** ON/OFF tiap node dengan indikator visual
-- **Online/Offline** node dideteksi via heartbeat MQTT (timeout 15 detik)
-- **Jumlah tangkapan total** per node dalam sesi berjalan
+- **Online/Offline** node dari **MQTT LWT** (Last Will — koneksi MQTT asli node, bukan tebakan)
+- **SSID & kekuatan sinyal WiFi** + **status hardware (boot test)** per node
+- **Jumlah tangkapan** per node (total tersimpan + total hari ini)
 
 ### Kontrol & Manajemen
 - **Kontrol relay** Node A & Node B langsung dari popup Pengaturan via MQTT
@@ -343,14 +346,16 @@ DASHBOARD-TANGKAPAN-NGENGAT/
 | Frontend | React 19 + TypeScript + Vite |
 | Styling | Tailwind CSS v4 |
 | Chart | Recharts |
-| MQTT (browser) | mqtt.js (WSS 8884) |
+| MQTT (browser) | mqtt.js (WSS 8884, + username/password) |
 | PWA | vite-plugin-pwa |
 | Icons | Lucide React |
 | Export Excel | SheetJS (xlsx) |
 | Firmware | Arduino / PlatformIO (ESP8266) |
-| Komunikasi IoT | MQTT via HiveMQ public broker |
+| MQTT (ESP) | PubSubClient — TCP 1883 (publik) / TLS 8883 (HiveMQ Cloud) |
+| Komunikasi IoT | MQTT — broker publik **atau** HiveMQ Cloud (auth + TLS) |
+| Kredensial | `secrets.h` (firmware) & `.env` (web) — di luar repo |
 | Database | Google Sheets via Apps Script |
-| Notifikasi | Telegram Bot (UniversalTelegramBot) |
+| Notifikasi | Telegram Bot (UniversalTelegramBot, parse mode HTML) |
 | Deploy | GitHub Pages (branch gh-pages) |
 
 ---
