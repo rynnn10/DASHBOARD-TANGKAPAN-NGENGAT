@@ -215,6 +215,46 @@ lib_deps =
 4. Klik **Build** → **Upload** di toolbar PlatformIO
 5. Buka **Serial Monitor** (115200 baud) untuk melihat log
 
+### 🔌 Mengatasi Port USB Tidak Terbaca saat Upload
+
+Gejala: sudah colok USB tapi `pio run -t upload` gagal / tak ada COM port. Cek dulu apa yang dilihat Windows:
+
+```powershell
+pio device list                       # daftar port yang dikenal PlatformIO
+[System.IO.Ports.SerialPort]::GetPortNames()   # daftar semua COM port
+```
+Buka juga **Device Manager** (`devmgmt.msc`) → lihat bagian **Ports (COM & LPT)** dan **Universal Serial Bus**.
+
+Diagnosis berdasarkan apa yang muncul:
+
+| Yang terlihat di Windows | Artinya | Solusi |
+|---|---|---|
+| **Tidak ada apa pun** muncul/hilang saat colok-cabut | Kabel **charge-only** (tanpa jalur data) atau port mati | Ganti **kabel USB DATA** (bukan kabel cas), coba **port USB lain** (colok langsung ke PC, hindari hub) |
+| **"Unknown USB Device (Device Descriptor Request Failed)"** / **Code 43** / `VID_0000` | Terhubung listrik tapi komunikasi USB gagal | **#1 ganti kabel data**, **#2 ganti port USB**, reseat konektor micro-USB di board (sering longgar/solder retak) |
+| Perangkat **⚠️ kuning** bernama "USB2.0-Serial / CH340 / CP2102" tanpa COM | **Driver belum terpasang** | Install driver (lihat di bawah) |
+| Muncul **COMx** normal tapi upload tetap gagal | Port benar; mungkin **dipakai proses lain** | Tutup **Serial Monitor**/program lain yang membuka port; cabut-colok; coba lagi |
+
+**Install driver USB-to-Serial** (sesuai chip pada NodeMCU):
+- **CH340 / CH341** (paling umum di NodeMCU v3): unduh dari WCH — `CH341SER` → jalankan → **Install**.
+- **CP2102 / CP210x**: driver **CP210x Universal** dari Silicon Labs.
+- Setelah install driver: **cabut-colok** board, lalu cek `pio device list` lagi.
+
+**Tentukan & paksa port (opsional)** bila auto-detect meleset — tambahkan di `platformio.ini`:
+```ini
+upload_port = COM5      ; ganti sesuai port Anda
+monitor_port = COM5
+upload_speed = 115200   ; turunkan ke 57600 bila upload sering putus
+```
+
+**Checklist cepat (urut dari paling sering):**
+1. ✅ Pakai **kabel USB DATA** asli/berkualitas — kabel cas-only adalah penyebab #1.
+2. ✅ Colok ke **port USB belakang PC** (langsung ke motherboard), bukan hub/port depan.
+3. ✅ Pasang **driver CH340/CP210x**.
+4. ✅ Tutup Serial Monitor / aplikasi yang memegang COM port.
+5. ✅ Coba board / kabel lain untuk memastikan bukan konektor micro-USB board yang rusak.
+
+> Saat upload, banyak NodeMCU otomatis masuk mode flashing. Jika tetap gagal "Failed to connect", **tahan tombol FLASH** di board lalu klik Upload (lepas setelah mulai "Connecting...").
+
 ---
 
 ## Telegram Bot
