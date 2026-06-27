@@ -276,10 +276,14 @@ Agar `kode.gs` lokal langsung tersinkron ke Apps Script tanpa copy-paste manual:
 
 **Pemakaian:**
 ```bash
-npm run gas:push     # upload kode.gs ke Apps Script (editor)
-npm run gas:watch    # auto-upload tiap kali kode.gs disimpan
-npm run gas:deploy   # push + update deployment (URL Web App TETAP sama)
+npm run gas:push           # upload kode.gs ke Apps Script (editor)
+npm run gas:watch          # auto-upload (editor saja) tiap kode.gs disimpan
+npm run gas:deploy         # push + update deployment (URL Web App TETAP sama)
+npm run gas:watch-deploy   # auto push + DEPLOY live tiap kode.gs disimpan
 ```
+
+> ⚙️ **`gas:watch-deploy`** memantau `kode.gs` & `appsscript.json`; tiap disimpan otomatis `push` lalu `deploy` ke deployment yang sama (URL tetap). Ada debounce 1 dtk + antrian anti-tumpang-tindih.
+> ⚠️ Tiap simpan = **kode langsung LIVE** + 1 versi baru Apps Script. Cocok saat aktif ngoprek; matikan (Ctrl+C) bila tak dipakai agar tak deploy kode setengah jadi / boros versi.
 
 > ⚠️ `gas:push` hanya update **editor** Apps Script. Live Web App baru berubah setelah `gas:deploy` (atau redeploy manual).
 > ⚠️ **Push pertama menimpa kode online** dengan `kode.gs` lokal — pastikan lokal sudah versi terbaru. `.clasp.json` & manifest `appsscript.json` mengatur scriptId & setting Web App (Execute as Me, Akses Anyone).
