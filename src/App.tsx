@@ -1403,8 +1403,8 @@ export default function App() {
       : { uv395: 0, online: false, battery: 0, voltage: 0, led: false, ssid: "", rssi: 0 },
   );
   // Self-test hardware status (dikirim dari firmware saat boot via MQTT)
-  const [selfTestA, setSelfTestA] = useState<{ir_ok:boolean;dht_ok:boolean;rtc_ok:boolean;relay_ok:boolean;temp:number;hum:number;rtcTime:string} | null>(null);
-  const [selfTestB, setSelfTestB] = useState<{ir_ok:boolean;dht_ok:boolean;rtc_ok:boolean;relay_ok:boolean;temp:number;hum:number;rtcTime:string} | null>(null);
+  const [selfTestA, setSelfTestA] = useState<{ir_ok:boolean;dht_ok:boolean;rtc_ok:boolean;relay_ok:boolean;volt_ok:boolean;temp:number;hum:number;rtcTime:string} | null>(null);
+  const [selfTestB, setSelfTestB] = useState<{ir_ok:boolean;dht_ok:boolean;rtc_ok:boolean;relay_ok:boolean;volt_ok:boolean;temp:number;hum:number;rtcTime:string} | null>(null);
 
   const [logs, setLogs] = useState<any[]>([]);
   const [logCurrentPage, setLogCurrentPage] = useState(1);
@@ -1668,6 +1668,11 @@ export default function App() {
           } else {
             setNodeA((prev) => ({ ...prev, ...batteryData }));
           }
+          // Jaga indikator "Voltage" tetap live dari pesan baterai (boot-test bisa basi)
+          if (payload.volt_ok !== undefined) {
+            const setSelf = payload.node === "B" ? setSelfTestB : setSelfTestA;
+            setSelf((prev) => (prev ? { ...prev, volt_ok: !!payload.volt_ok } : prev));
+          }
         } else if (topic === "dashboard/ngengat/lingkungan") {
           // DHT22 — Suhu & Kelembaban
           const nodeKey = payload.node === "B" ? "B" : "A";
@@ -1707,6 +1712,7 @@ export default function App() {
             dht_ok:   !!payload.dht_ok,
             rtc_ok:   !!payload.rtc_ok,
             relay_ok: !!payload.relay_ok,
+            volt_ok:  !!payload.volt_ok,
             temp:     Number(payload.temp) || 0,
             hum:      Number(payload.hum)  || 0,
             rtcTime:  String(payload.rtcTime || "--"),
@@ -3645,17 +3651,23 @@ export default function App() {
                         <Battery className="w-3 h-3" /> Baterai
                       </span>
                       <span className="font-bold text-gray-700 dark:text-gray-300">
-                        {nodeA.battery}% (
-                        {userProfile?.voltageUnit === "mV"
-                          ? nodeA.voltage * 1000 + "mV"
-                          : nodeA.voltage + "V"}
-                        )
+                        {nodeA.battery < 0 ? (
+                          <span className="text-gray-400 dark:text-gray-500">N/A · sensor —</span>
+                        ) : (
+                          <>
+                            {nodeA.battery}% (
+                            {userProfile?.voltageUnit === "mV"
+                              ? nodeA.voltage * 1000 + "mV"
+                              : nodeA.voltage + "V"}
+                            )
+                          </>
+                        )}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div
                         className="h-2 rounded-full transition-all duration-700"
-                        style={{ width: `${nodeA.battery}%`, backgroundColor: demoBatteryColorA }}
+                        style={{ width: `${Math.max(0, nodeA.battery)}%`, backgroundColor: demoBatteryColorA }}
                       ></div>
                     </div>
                     {isDemoMode && (
@@ -3709,8 +3721,8 @@ export default function App() {
                     <div className="border-t border-gray-100 dark:border-gray-700 pt-2 mt-1">
                       <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">Status Hardware (boot test)</p>
                       <div className="flex flex-wrap gap-1">
-                        {(["ir_ok","dht_ok","rtc_ok","relay_ok"] as const).map((k) => {
-                          const labels: Record<string, string> = {ir_ok:"IR",dht_ok:"DHT22",rtc_ok:"RTC",relay_ok:"Relay"};
+                        {(["ir_ok","dht_ok","rtc_ok","relay_ok","volt_ok"] as const).map((k) => {
+                          const labels: Record<string, string> = {ir_ok:"IR",dht_ok:"DHT22",rtc_ok:"RTC",relay_ok:"Relay",volt_ok:"Voltage"};
                           const ok = selfTestA[k];
                           return (
                             <span key={k} className={cn(
@@ -3757,17 +3769,23 @@ export default function App() {
                         <BatteryMedium className="w-3 h-3" /> Baterai
                       </span>
                       <span className="font-bold text-gray-700 dark:text-gray-300">
-                        {nodeB.battery}% (
-                        {userProfile?.voltageUnit === "mV"
-                          ? nodeB.voltage * 1000 + "mV"
-                          : nodeB.voltage + "V"}
-                        )
+                        {nodeB.battery < 0 ? (
+                          <span className="text-gray-400 dark:text-gray-500">N/A · sensor —</span>
+                        ) : (
+                          <>
+                            {nodeB.battery}% (
+                            {userProfile?.voltageUnit === "mV"
+                              ? nodeB.voltage * 1000 + "mV"
+                              : nodeB.voltage + "V"}
+                            )
+                          </>
+                        )}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div
                         className="h-2 rounded-full transition-all duration-700"
-                        style={{ width: `${nodeB.battery}%`, backgroundColor: demoBatteryColorB }}
+                        style={{ width: `${Math.max(0, nodeB.battery)}%`, backgroundColor: demoBatteryColorB }}
                       ></div>
                     </div>
                     {isDemoMode && (
@@ -3821,8 +3839,8 @@ export default function App() {
                     <div className="border-t border-gray-100 dark:border-gray-700 pt-2 mt-1">
                       <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">Status Hardware (boot test)</p>
                       <div className="flex flex-wrap gap-1">
-                        {(["ir_ok","dht_ok","rtc_ok","relay_ok"] as const).map((k) => {
-                          const labels: Record<string, string> = {ir_ok:"IR",dht_ok:"DHT22",rtc_ok:"RTC",relay_ok:"Relay"};
+                        {(["ir_ok","dht_ok","rtc_ok","relay_ok","volt_ok"] as const).map((k) => {
+                          const labels: Record<string, string> = {ir_ok:"IR",dht_ok:"DHT22",rtc_ok:"RTC",relay_ok:"Relay",volt_ok:"Voltage"};
                           const ok = selfTestB[k];
                           return (
                             <span key={k} className={cn(
