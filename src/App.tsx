@@ -1508,11 +1508,6 @@ export default function App() {
     [isDemoMode],
   );
 
-  // Jejak waktu data terakhir per node (informasi; status online kini dari LWT)
-  const heartbeatRef = React.useRef<{ A: number; B: number }>({
-    A: Date.now(),
-    B: Date.now(),
-  });
   // Eksekusi alarm yang dilaporkan node (untuk cek alarm terlewat)
   const alarmExecRef = React.useRef<{ node: string; action: string; ts: number }[]>([]);
   // Kunci alarm yang sudah diproses (hindari log ganda) — "tanggal|node|aksi|HH:MM"
@@ -1559,9 +1554,6 @@ export default function App() {
               ? payload.node
               : espTargetNodeRef.current;
 
-          heartbeatRef.current[nodeFromPayload === "A" ? "A" : "B"] =
-            Date.now();
-
           // Deteksi data dari buffer offline (payload.buffered === true)
           if (payload.buffered === true) {
             const ref = bufferFlushRef.current;
@@ -1595,7 +1587,7 @@ export default function App() {
               const newCount = prev.uv365 + 1;
               showCatchNotif("A", newCount, prevCatchRef.current.A);
               prevCatchRef.current.A = newCount;
-              return { ...prev, uv365: newCount, online: true };
+              return { ...prev, uv365: newCount };
             });
             setLogs((prevLogs) =>
               [
@@ -1622,7 +1614,7 @@ export default function App() {
               const newCount = prev.uv395 + 1;
               showCatchNotif("B", newCount, prevCatchRef.current.B);
               prevCatchRef.current.B = newCount;
-              return { ...prev, uv395: newCount, online: true };
+              return { ...prev, uv395: newCount };
             });
             setLogs((prevLogs) =>
               [
@@ -1652,13 +1644,9 @@ export default function App() {
           if (payload.buffered === true && !bufferBatteryEnabledRef.current)
             return;
 
-          const nodeKey = payload.node === "B" ? "B" : "A";
-          heartbeatRef.current[nodeKey] = Date.now();
-
           const batteryData = {
             battery: Math.round(payload.percentage),
             voltage: Number(parseFloat(payload.voltage).toFixed(2)),
-            online: true,
             ...(payload.relay !== undefined && { led: payload.relay }),
             ...(payload.ssid !== undefined && { ssid: String(payload.ssid) }),
             ...(payload.rssi !== undefined && { rssi: Number(payload.rssi) }),
@@ -1676,12 +1664,6 @@ export default function App() {
         } else if (topic === "dashboard/ngengat/lingkungan") {
           // DHT22 — Suhu & Kelembaban
           const nodeKey = payload.node === "B" ? "B" : "A";
-          heartbeatRef.current[nodeKey] = Date.now();
-
-          // Data DHT (tiap 30 dtk) ikut menandai node ONLINE agar status tidak
-          // berkedip offline di antara publish baterai (tiap 60 dtk).
-          if (nodeKey === "B") setNodeB((prev) => (prev.online ? prev : { ...prev, online: true }));
-          else setNodeA((prev) => (prev.online ? prev : { ...prev, online: true }));
 
           const temp = Number(parseFloat(payload.temp).toFixed(1));
           const humidity = Number(parseFloat(payload.humidity).toFixed(1));
@@ -1718,13 +1700,9 @@ export default function App() {
             rtcTime:  String(payload.rtcTime || "--"),
           };
           if (payload.node === "B") {
-            heartbeatRef.current.B = Date.now();
             setSelfTestB(st);
-            setNodeB((prev) => (prev.online ? prev : { ...prev, online: true }));
           } else {
-            heartbeatRef.current.A = Date.now();
             setSelfTestA(st);
-            setNodeA((prev) => (prev.online ? prev : { ...prev, online: true }));
           }
         }
         if (topic === "dashboard/ngengat/alarmexec") {
@@ -1794,11 +1772,12 @@ export default function App() {
     };
   }, [isDemoMode]);
 
-  // Catatan: status online/offline TIDAK lagi ditebak dari kedatangan data
-  // (heartbeat) yang dulu bikin berkedip. Kini bersumber dari:
-  //   (1) topik retained "dashboard/ngengat/status/{A,B}" — LWT koneksi MQTT node,
+  // Status online/offline bersumber TUNGGAL dari koneksi MQTT asli node:
+  //   (1) topik retained "dashboard/ngengat/status/{A,B}" — LWT (online saat connect,
+  //       offline saat putus), DAN
   //   (2) event "offline" MQTT browser (semua node offline jika browser putus).
-  // Data deteksi/baterai/DHT/selftest hanya boleh MENGUATKAN online (tak pernah set offline).
+  // Data deteksi/baterai/DHT/selftest TIDAK menyetel online — mencegah pesan RETAINED
+  // (mis. selftest basi) menandai node "online" padahal ESP sudah mati.
 
   // Auto-sync ke Google Sheets setiap 5 menit
   useEffect(() => {
