@@ -11,7 +11,10 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "gas:push": "clasp push -f",
+    "gas:watch": "clasp push -f --watch",
+    "gas:deploy": "clasp push -f && clasp deploy -i PASTE_DEPLOYMENT_ID -d \"auto deploy\""
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -33,6 +36,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@google/clasp": "^2.4.2",
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",

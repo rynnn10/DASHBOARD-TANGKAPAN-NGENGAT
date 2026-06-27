@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# clasp — kredensial & config lokal (jangan commit)
+.clasp.json
+.clasprc.json

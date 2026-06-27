@@ -259,6 +259,28 @@ File `kode.gs` dideploy sebagai **Web App** di Google Apps Script — berfungsi 
 5. Salin URL deployment
 6. Paste di kolom **URL Google Sheet** di pengaturan dashboard (mode Data Asli)
 
+### 🔄 Sinkronisasi Otomatis via `clasp` (opsional)
+
+Agar `kode.gs` lokal langsung tersinkron ke Apps Script tanpa copy-paste manual:
+
+**Setup sekali:**
+1. Aktifkan **Apps Script API**: https://script.google.com/home/usersettings → ON
+2. `npm install` (clasp sudah jadi devDependency) lalu **login**: `npx clasp login`
+3. Salin **Script ID** (Apps Script → ⚙️ Project Settings) ke file `.clasp.json`:
+   - `cp .clasp.json.example .clasp.json` → isi `scriptId`
+4. Salin **Deployment ID** (Deploy → Manage deployments) → ganti `PASTE_DEPLOYMENT_ID` di skrip `gas:deploy` (package.json).
+
+**Pemakaian:**
+```bash
+npm run gas:push     # upload kode.gs ke Apps Script (editor)
+npm run gas:watch    # auto-upload tiap kali kode.gs disimpan
+npm run gas:deploy   # push + update deployment (URL Web App TETAP sama)
+```
+
+> ⚠️ `gas:push` hanya update **editor** Apps Script. Live Web App baru berubah setelah `gas:deploy` (atau redeploy manual).
+> ⚠️ **Push pertama menimpa kode online** dengan `kode.gs` lokal — pastikan lokal sudah versi terbaru. `.clasp.json` & manifest `appsscript.json` mengatur scriptId & setting Web App (Execute as Me, Akses Anyone).
+> ⚠️ Deploy ke **deployment ID yang ada** (`-i`) menjaga URL tetap sama; tanpa itu, tiap deploy membuat URL baru.
+
 ### Sheet yang Dibuat Otomatis
 
 | Sheet | Isi |

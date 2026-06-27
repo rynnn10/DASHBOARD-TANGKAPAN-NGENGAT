@@ -1,0 +1,6 @@
+# Abaikan SEMUA, lalu hanya sertakan file Apps Script (kode.gs + manifest).
+# Mencegah clasp ikut mengunggah file web (App.tsx, dist, node_modules, dll).
+**/**
+
+!appsscript.json
+!kode.gs
