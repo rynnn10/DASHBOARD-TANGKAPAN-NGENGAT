@@ -89,8 +89,12 @@ const SCRIPT_URL = import.meta.env.VITE_GAS_URL || "";
 //   MQTT_USER = "username_cluster", MQTT_PASS = "password_cluster"
 // CATATAN: nilai ini ikut ke bundle publik (terlihat saat inspect) — wajar untuk skala hobi.
 // Bisa diisi via env (VITE_MQTT_*) atau langsung di sini.
-const MQTT_URL =
+const MQTT_URL_PRIMARY =
   import.meta.env.VITE_MQTT_URL || "wss://broker.hivemq.com:8884/mqtt";
+// Broker CADANGAN publik (tanpa auth). Web terhubung ke utama + cadangan SEKALIGUS,
+// agar tetap melihat ESP saat ESP fallback ke broker publik. wss wajib (web di HTTPS).
+const MQTT_URL_BACKUP =
+  import.meta.env.VITE_MQTT_URL_BACKUP || "wss://broker.emqx.io:8084/mqtt";
 const MQTT_USER = import.meta.env.VITE_MQTT_USER || "";
 const MQTT_PASS = import.meta.env.VITE_MQTT_PASS || "";
 
@@ -1555,6 +1559,16 @@ export default function App() {
   });
   const espTargetNodeRef = React.useRef(espTargetNode);
   const mqttClientRef = React.useRef<MqttClient | null>(null);
+  // Dual-broker: lacak status online tiap node PER broker (utama/cadangan).
+  // Node dianggap online bila SALAH SATU broker melaporkan online (ESP cuma di salah satu).
+  const nodeStatusRef = React.useRef<{
+    A: { primary?: boolean; backup?: boolean };
+    B: { primary?: boolean; backup?: boolean };
+  }>({ A: {}, B: {} });
+  const brokerConnRef = React.useRef<{ primary: boolean; backup: boolean }>({
+    primary: false,
+    backup: false,
+  });
   const [relayMode, setRelayMode] = useState<{
     A: "auto" | "manual";
     B: "auto" | "manual";
@@ -1615,30 +1629,24 @@ export default function App() {
 
     import("mqtt").then(({ default: mqttLib }) => {
       if (cancelled) return;
-      const client = mqttLib.connect(
-        MQTT_URL,
-        MQTT_USER ? { username: MQTT_USER, password: MQTT_PASS } : undefined,
-      );
-      mqttClientRef.current = client;
 
-    client.on("connect", () => {
-      console.log("✅ Terhubung ke MQTT Broker HiveMQ");
-      client.subscribe("dashboard/ngengat/deteksi");
-      client.subscribe("dashboard/ngengat/baterai");
-      client.subscribe("dashboard/ngengat/lingkungan");
-      client.subscribe("dashboard/ngengat/selftest");
-      client.subscribe("dashboard/ngengat/status/+"); // retained — status online/offline node (LWT)
-      client.subscribe("dashboard/ngengat/alarmexec"); // event eksekusi alarm relay terjadwal
-      client.subscribe("dashboard/ngengat/settings"); // retained — sinkron pengaturan antar device
-      client.subscribe("dashboard/ngengat/schedule"); // retained — jadwal alarm DS3231
-      // Pastikan firmware punya jam aktif Telegram terbaru (retained)
-      try {
-        const w = JSON.parse(localStorage.getItem("tgWindow") || '{"start":6,"end":18}');
-        client.publish("dashboard/ngengat/tgwindow", JSON.stringify(w), { retain: true, qos: 1 });
-      } catch {}
-    });
+      // Web terhubung ke KEDUA broker sekaligus (utama HiveMQ + cadangan emqx) supaya
+      // selalu melihat ESP di broker mana pun ia berada saat fallback.
+      const clients: MqttClient[] = [];
 
-    client.on("message", (topic, message) => {
+      const subscribeAll = (client: MqttClient) => {
+        client.subscribe("dashboard/ngengat/deteksi");
+        client.subscribe("dashboard/ngengat/baterai");
+        client.subscribe("dashboard/ngengat/lingkungan");
+        client.subscribe("dashboard/ngengat/selftest");
+        client.subscribe("dashboard/ngengat/status/+"); // retained — status online/offline node (LWT)
+        client.subscribe("dashboard/ngengat/alarmexec"); // event eksekusi alarm relay terjadwal
+        client.subscribe("dashboard/ngengat/settings"); // retained — sinkron pengaturan antar device
+        client.subscribe("dashboard/ngengat/schedule"); // retained — jadwal alarm DS3231
+      };
+
+      const onMessage =
+        (broker: "primary" | "backup") => (topic: string, message: Buffer) => {
       try {
         const payloadStr = message.toString();
         const payload = JSON.parse(payloadStr);
@@ -1822,10 +1830,15 @@ export default function App() {
         }
         if (topic.startsWith("dashboard/ngengat/status/")) {
           // Status node = koneksi MQTT asli (LWT). Sumber kebenaran online/offline.
+          // Dual-broker: simpan status PER broker, node online bila SALAH SATU true
+          // (ESP hanya nyambung di satu broker; LWT broker lain bisa basi = false).
           const node = topic.endsWith("/B") || payload.node === "B" ? "B" : "A";
-          const isOnline = payload.online === true;
-          if (node === "B") setNodeB((prev) => (prev.online === isOnline ? prev : { ...prev, online: isOnline }));
-          else setNodeA((prev) => (prev.online === isOnline ? prev : { ...prev, online: isOnline }));
+          nodeStatusRef.current[node][broker] = payload.online === true;
+          const merged =
+            nodeStatusRef.current[node].primary === true ||
+            nodeStatusRef.current[node].backup === true;
+          if (node === "B") setNodeB((prev) => (prev.online === merged ? prev : { ...prev, online: merged }));
+          else setNodeA((prev) => (prev.online === merged ? prev : { ...prev, online: merged }));
         }
         if (topic === "dashboard/ngengat/schedule") {
           if (Array.isArray(payload.schedules)) {
@@ -1849,13 +1862,65 @@ export default function App() {
       } catch (err) {
         console.error("Gagal parsing MQTT:", err);
       }
-    });
+      };
 
-      client.on("offline", () => {
-        console.log("❌ Terputus dari MQTT Broker (WebSocket)");
-        setNodeA((prev) => ({ ...prev, online: false }));
-        setNodeB((prev) => ({ ...prev, online: false }));
-      });
+      const updateConn = (broker: "primary" | "backup", connected: boolean) => {
+        brokerConnRef.current[broker] = connected;
+        // Tandai SEMUA node offline HANYA bila KEDUA koneksi web putus
+        // (mis. web kehilangan internet). Bila salah satu hidup, andalkan LWT.
+        if (!brokerConnRef.current.primary && !brokerConnRef.current.backup) {
+          setNodeA((prev) => ({ ...prev, online: false }));
+          setNodeB((prev) => ({ ...prev, online: false }));
+        }
+      };
+
+      const makeClient = (
+        url: string,
+        auth: { username: string; password: string } | undefined,
+        label: string,
+        broker: "primary" | "backup",
+      ) => {
+        const client = mqttLib.connect(url, {
+          ...(auth || {}),
+          reconnectPeriod: 5000,
+          connectTimeout: 8000,
+        });
+        client.on("connect", () => {
+          console.log(`✅ MQTT ${label} terhubung`);
+          updateConn(broker, true);
+          subscribeAll(client);
+          // Pastikan firmware punya jam aktif Telegram terbaru (retained)
+          try {
+            const w = JSON.parse(localStorage.getItem("tgWindow") || '{"start":6,"end":18}');
+            client.publish("dashboard/ngengat/tgwindow", JSON.stringify(w), { retain: true, qos: 1 });
+          } catch {}
+        });
+        client.on("message", onMessage(broker));
+        client.on("offline", () => updateConn(broker, false));
+        client.on("error", () => {});
+        return client;
+      };
+
+      const cPrimary = makeClient(
+        MQTT_URL_PRIMARY,
+        MQTT_USER ? { username: MQTT_USER, password: MQTT_PASS } : undefined,
+        "HiveMQ (utama)",
+        "primary",
+      );
+      const cBackup = makeClient(MQTT_URL_BACKUP, undefined, "emqx (cadangan)", "backup");
+      clients.push(cPrimary, cBackup);
+
+      // Facade: publish fan-out ke SEMUA broker aktif → titik publish lain tak perlu diubah.
+      mqttClientRef.current = {
+        publish: (topic: string, msg: string | Buffer, opts?: unknown) => {
+          clients.forEach((c) => {
+            try {
+              (c.publish as (...a: unknown[]) => unknown)(topic, msg, opts);
+            } catch {}
+          });
+        },
+        end: () => clients.forEach((c) => { try { c.end(); } catch {} }),
+      } as unknown as MqttClient;
     });
 
     return () => {
