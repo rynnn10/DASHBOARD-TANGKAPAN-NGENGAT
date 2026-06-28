@@ -2252,8 +2252,13 @@ export default function App() {
         });
         const result = await response.json();
         if (result.status === "success" && result.data) {
-          if (result.data.nodeA) setNodeA(result.data.nodeA);
-          if (result.data.nodeB) setNodeB(result.data.nodeB);
+          // Merge, JANGAN replace: ssid/rssi cuma ada dari MQTT (DB tak menyimpannya),
+          // dan online bersumber TUNGGAL dari LWT MQTT. Replace penuh akan menghapus
+          // tampilan WiFi (race dengan pesan baterai MQTT) → kadang hilang kadang tidak.
+          if (result.data.nodeA)
+            setNodeA((prev) => ({ ...result.data.nodeA, ssid: prev.ssid, rssi: prev.rssi, online: prev.online }));
+          if (result.data.nodeB)
+            setNodeB((prev) => ({ ...result.data.nodeB, ssid: prev.ssid, rssi: prev.rssi, online: prev.online }));
           if (result.data.logs) setLogs(result.data.logs);
           if (result.data.chartData && result.data.chartData.length > 0) setChartData(result.data.chartData);
           if (result.data.effectChartData) setEffectChartData(result.data.effectChartData);
@@ -4274,6 +4279,7 @@ export default function App() {
                       height="100%"
                       minWidth={0}
                       minHeight={0}
+                      debounce={50}
                     >
                       <LineChart
                         data={chartData}
@@ -4443,6 +4449,7 @@ export default function App() {
                       height="100%"
                       minWidth={0}
                       minHeight={0}
+                      debounce={50}
                     >
                       <BarChart
                         data={[
@@ -4639,6 +4646,8 @@ export default function App() {
                         width="100%"
                         height="100%"
                         minWidth={0}
+                        minHeight={0}
+                        debounce={50}
                       >
                         <LineChart
                           data={dhtBuiltChartData}
@@ -4713,6 +4722,8 @@ export default function App() {
                         width="100%"
                         height="100%"
                         minWidth={0}
+                        minHeight={0}
+                        debounce={50}
                       >
                         <LineChart
                           data={dhtBuiltChartData}
