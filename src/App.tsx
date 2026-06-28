@@ -3796,9 +3796,11 @@ export default function App() {
                   <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
                     Jadwal: 18:00 ON — 06:00 OFF (DS3231)
                   </p>
-                  {!isDemoMode && selfTestA && nodeA.online && (
-                    <div className="border-t border-gray-100 dark:border-gray-700 pt-2 mt-1">
-                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">Status Hardware (boot test)</p>
+                  {!isDemoMode && selfTestA && (
+                    <div className={cn("border-t border-gray-100 dark:border-gray-700 pt-2 mt-1", !nodeA.online && "opacity-60")}>
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">
+                        Status Hardware (boot test){!nodeA.online && " — terakhir diketahui"}
+                      </p>
                       <div className="flex flex-wrap gap-1">
                         {(["ir_ok","dht_ok","rtc_ok","relay_ok","volt_ok"] as const).map((k) => {
                           const labels: Record<string, string> = {ir_ok:"IR",dht_ok:"DHT22",rtc_ok:"RTC",relay_ok:"Relay",volt_ok:"Voltage"};
@@ -3914,9 +3916,11 @@ export default function App() {
                   <p className="text-[10px] text-gray-400 dark:text-gray-600 text-right">
                     Jadwal: 18:00 ON — 06:00 OFF (DS3231)
                   </p>
-                  {!isDemoMode && selfTestB && nodeB.online && (
-                    <div className="border-t border-gray-100 dark:border-gray-700 pt-2 mt-1">
-                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">Status Hardware (boot test)</p>
+                  {!isDemoMode && selfTestB && (
+                    <div className={cn("border-t border-gray-100 dark:border-gray-700 pt-2 mt-1", !nodeB.online && "opacity-60")}>
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-1.5 font-medium">
+                        Status Hardware (boot test){!nodeB.online && " — terakhir diketahui"}
+                      </p>
                       <div className="flex flex-wrap gap-1">
                         {(["ir_ok","dht_ok","rtc_ok","relay_ok","volt_ok"] as const).map((k) => {
                           const labels: Record<string, string> = {ir_ok:"IR",dht_ok:"DHT22",rtc_ok:"RTC",relay_ok:"Relay",volt_ok:"Voltage"};
